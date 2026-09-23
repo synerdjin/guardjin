@@ -40,6 +40,7 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
     safe(async ({ item: ref, socket, query }) => {
       const [inv, defs] = await Promise.all([ctx.profile.inventory(), ctx.manifest.load()]);
       const item = resolveItem(inv, ref);
+      await ctx.profile.refreshItem(inv, item);
       const sockets = itemSockets(inv, defs, item);
       const energy = item.armor?.energy;
       if (socket === undefined) {
@@ -100,18 +101,23 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
     },
     safe(async ({ changes, dryRun }) => {
       const [inv, defs] = await Promise.all([ctx.profile.inventory(true), ctx.manifest.load()]);
-      const plan = planPlugChanges(
-        inv,
-        defs,
-        changes.map((c) => ({ ...c, item: resolveItem(inv, c.item) })),
-      );
+      const requests = changes.map((c) => ({ ...c, item: resolveItem(inv, c.item) }));
+      // The cached profile can lag recent writes; plan against the items' live state.
+      await Promise.all([...new Set(requests.map((r) => r.item))].map((item) => ctx.profile.refreshItem(inv, item)));
+      const plan = planPlugChanges(inv, defs, requests);
       const summary = describePlan(plan);
       if (dryRun || !plan.changes.length) return ok({ dryRun: !!dryRun, ...summary });
       const account = await ctx.account.get();
       try {
         const results = await executePlugChanges(ctx.http, account, plan);
-        const failed = results.filter((r) => !r.ok);
-        return ok({ ...summary, applied: results.filter((r) => r.ok).length, failed: failed.length ? failed : undefined });
+        for (const r of results) if (r.ok) ctx.profile.recordPlug(r.itemId, r.socket, r.plugHash, r.energyUsed);
+        const failed = results.filter((r) => !r.ok).map(({ itemId: _i, plugHash: _p, energyUsed: _e, ...rest }) => rest);
+        return ok({
+          ...summary,
+          applied: results.filter((r) => r.ok).length,
+          failed: failed.length ? failed : undefined,
+          note: results.some((r) => r.ok) ? 'The game accepted the change. Bungie\'s data can take a minute to show it, but this tool remembers it meanwhile.' : undefined,
+        });
       } finally {
         ctx.profile.invalidate();
       }

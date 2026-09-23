@@ -113,3 +113,31 @@ describe('planPlugChanges', () => {
     expect(p.errors[0]).toMatch(/say which socket to empty: 0: Empty Mod Socket/);
   });
 });
+
+describe('recent-write overlay', () => {
+  it('keeps a confirmed plug and its energy visible while Bungie\'s read data is stale', async () => {
+    const { ProfileService } = await import('../src/inventory/profile.js');
+    const { inv, helm } = setup({ capacity: 10, used: 3 });
+    const staleSockets = [EMPTY_GENERAL, ASHES_TO_ASSETS, EMPTY_HEAD, EMPTY_HEAD, DEFAULT_SHADER, UPGRADE_ARMOR].map((plugHash) => ({ plugHash, isEnabled: true, isVisible: true }));
+    const http = (async () => ({
+      Response: {
+        sockets: { data: { sockets: staleSockets.map((s) => ({ ...s })) } },
+        instance: { data: { energy: { energyCapacity: 10, energyUsed: 3 } } },
+      },
+      ErrorCode: 1,
+    })) as never;
+    const profile = new ProfileService(http, { get: async () => ({ membershipType: 3, membershipId: '1' }) } as never, {} as never);
+
+    profile.recordPlug('helm1', 0, GRENADE_MOD, 4);
+    await profile.refreshItem(inv, helm);
+    const sockets = itemSockets(inv, defs, helm);
+    expect(sockets.find((s) => s.index === 0)?.current?.hash).toBe(GRENADE_MOD);
+    expect(sockets.find((s) => s.index === 2)?.current?.hash).toBe(EMPTY_HEAD); // untouched sockets keep live data
+    expect(helm.armor?.energy).toEqual({ capacity: 10, used: 4 });
+
+    // Planning now sees the mod as already placed, instead of trying to insert it again.
+    const p = planPlugChanges(inv, defs, [{ item: helm, plug: 'Grenade Mod' }]);
+    expect(p.changes).toEqual([]);
+    expect(p.unchanged).toHaveLength(1);
+  });
+});

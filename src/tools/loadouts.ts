@@ -17,6 +17,7 @@ import type { Defs } from '../manifest/defs.js';
 import { executeEquip, executeTransfers, planEquip } from '../vault/actions.js';
 import { READ_ONLY, UserError, WRITE, ok, resolveCharacter, resolveItems, safe } from './util.js';
 
+const LAG_NOTE = 'Bungie\'s data can take a minute or more to reflect changes; call list_loadouts again to confirm.';
 const ORBIT_NOTE = 'The character must be in orbit, in a social space, or offline.';
 const slotSchema = z.union([z.number().int().min(0), z.string()]);
 
@@ -115,8 +116,10 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
         return ok({
           ...summary,
           transferFailures: transfers.filter((t) => !t.ok).map((t) => `${t.item}: ${t.error}`),
-          equipped: !notEquipped.length,
-          notEquipped: notEquipped.length ? notEquipped : undefined,
+          // The API accepted the request; whether the profile already shows it is a separate question.
+          confirmed: !notEquipped.length,
+          unconfirmed: notEquipped.length ? notEquipped : undefined,
+          note: notEquipped.length ? LAG_NOTE : undefined,
         });
       } finally {
         ctx.profile.invalidate();
@@ -175,7 +178,14 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
         }
         await snapshotToSlot(ctx.http, account, slot, ids);
         const after = await reread(ctx, slot);
-        return ok({ ...summary, replaces: undefined, saved: after.loadout ? describeLoadout(after.loadout, after.inv) : undefined });
+        const confirmed = !!after.loadout && after.loadout.name === summary.name;
+        return ok({
+          ...summary,
+          replaces: undefined,
+          saved: confirmed && after.loadout ? describeLoadout(after.loadout, after.inv) : undefined,
+          confirmed,
+          note: confirmed ? undefined : `The game accepted the save. ${LAG_NOTE}`,
+        });
       } finally {
         ctx.profile.invalidate();
       }
@@ -204,7 +214,8 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
       try {
         await renameSlot(ctx.http, account, slot, chooseIdentifiers(inv, defs, slot, name));
         const after = await reread(ctx, slot);
-        return ok({ character: c.className, slot: slot.index, from: slot.loadout.name, to: after.loadout?.name });
+        const confirmed = after.loadout?.name === defs.loadoutName(chooseIdentifiers(inv, defs, slot, name).nameHash)?.name;
+        return ok({ character: c.className, slot: slot.index, from: slot.loadout.name, requested: name, confirmed, note: confirmed ? undefined : `The game accepted the rename. ${LAG_NOTE}` });
       } finally {
         ctx.profile.invalidate();
       }
@@ -235,7 +246,8 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
       try {
         await clearSlot(ctx.http, account, slot);
         const after = await reread(ctx, slot);
-        return ok({ deleted: deleting.name, slot: slot.index, character: c.className, slotNowEmpty: !after.loadout });
+        const confirmed = !after.loadout;
+        return ok({ deleted: deleting.name, slot: slot.index, character: c.className, confirmed, note: confirmed ? undefined : `The game accepted the delete. ${LAG_NOTE}` });
       } finally {
         ctx.profile.invalidate();
       }

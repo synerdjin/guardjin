@@ -31,6 +31,11 @@ describe('buildLoadouts', () => {
     expect(l).toMatchObject({ index: 1, name: 'Gamma', characterId: WARLOCK });
   });
 
+  it('treats slots holding only placeholder items (id "0") as empty', () => {
+    const inv = inventoryWith([saved([{ itemInstanceId: '0' }]), saved([{ itemInstanceId: 'a' }])]);
+    expect(buildLoadouts(inv, defs).map((l) => l.index)).toEqual([1]);
+  });
+
   it('marks a loadout active only when every item is equipped on that character', () => {
     const inv = inventoryWith([saved([{ itemInstanceId: 'a' }, { itemInstanceId: 'b' }]), saved([{ itemInstanceId: 'a' }, { itemInstanceId: 'v' }])]);
     expect(buildLoadouts(inv, defs).map((l) => l.active)).toEqual([true, false]);

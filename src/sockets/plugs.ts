@@ -296,6 +296,11 @@ export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugR
 }
 
 export interface PlugResult {
+  /** Instance id of the changed item. */
+  itemId: string;
+  plugHash: number;
+  /** Armor energy used after this change, when the item has energy. */
+  energyUsed?: number;
   item: string;
   socket: number;
   plug: string;
@@ -307,7 +312,7 @@ export interface PlugResult {
 export async function executePlugChanges(http: HttpClient, account: DestinyAccount, plan: PlugPlan): Promise<PlugResult[]> {
   const results: PlugResult[] = [];
   for (const c of plan.changes) {
-    const base = { item: c.item.name, socket: c.socketIndex, plug: c.plug.name };
+    const base = { itemId: c.item.instanceId!, plugHash: c.plug.hash, energyUsed: c.energy?.used, item: c.item.name, socket: c.socketIndex, plug: c.plug.name };
     try {
       await unwrap(
         insertSocketPlugFree(http, {

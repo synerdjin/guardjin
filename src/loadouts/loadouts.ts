@@ -31,11 +31,12 @@ export interface Loadout {
 export function buildLoadouts(inv: InventoryModel, defs: Defs, characters: Character[] = inv.characters): Loadout[] {
   const out: Loadout[] = [];
   for (const character of characters) {
-    const saved = inv.raw.characterLoadouts?.data?.[character.id]?.loadouts ?? [];
-    saved.forEach((l, index) => {
-      if (!l.items.length) return;
+    const slots = inv.raw.characterLoadouts?.data?.[character.id]?.loadouts ?? [];
+    slots.forEach((l, index) => {
       // Slots saved without an item come back as instance id "0".
-      const items = l.items.filter((li) => li.itemInstanceId && li.itemInstanceId !== '0').map((li): LoadoutItem => {
+      const saved = l.items.filter((li) => li.itemInstanceId && li.itemInstanceId !== '0');
+      if (!saved.length) return; // empty slot
+      const items = saved.map((li): LoadoutItem => {
         const item = inv.byId.get(li.itemInstanceId);
         return {
           id: li.itemInstanceId,
