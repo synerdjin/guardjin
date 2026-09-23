@@ -58,6 +58,9 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 - *"Which exotic weapons am I missing, and which catalysts am I closest to finishing?"*
 - *"What's this week's featured dungeon and its modifiers?"*
 - *"How did my last raid go? Which weapons did I use the most?"*
+- *"How many Vault of Glass clears do I have, and what's my fastest?"*
+- *"What season pass level am I, and what weekly milestones are left?"*
+- *"Which weapon patterns can I craft?"*
 - *"Build me a grenade Warlock, put the stat mods on, and save it as my Raid loadout."*
 - *"Move all my Titan armor from my Hunter to the vault."*
 - *"Lock everything the wishlist marks as a god roll."*
@@ -80,11 +83,20 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
 | `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
-| `get_item_sockets` | An item's sockets with current plugs, and the unlocked options for one socket |
+| `get_item_sockets` | An item's sockets with current plugs and their progress, and the options for one socket with unlock progress and why blocked ones can't be inserted |
 | `get_weekly_activities` | What is active now: featured raids/dungeons, Nightfall, Trials and other milestones with modifiers, challenges and rotation dates |
-| `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item |
+| `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item; `public` shows the character-independent stock |
 | `search_collectibles` | Collections: missing (or owned) weapons, armor, exotics, ornaments and shaders, filterable by rarity, type and source |
 | `search_triumphs` | Triumphs, catalysts and seals with objective progress, closest-to-done first, plus your scores |
+| `get_progression` | Season and season pass rank, Guardian Rank, artifact bonus, faction ranks, and weekly/daily milestone progress |
+| `get_currencies` | Glimmer, shards, Bright Dust, Silver and other currencies, plus materials |
+| `get_craftables` | Weapon patterns: which you can craft and why others are locked |
+| `get_current_activity` | Where a character is (orbit, activity, offline), fireteam, and whether gear changes will likely be accepted |
+| `get_kiosks` / `get_vendor_receipts` / `get_commendations` | Kiosk contents, refundable purchases, commendation scores |
+| `get_career_stats` | Lifetime stats per mode (raid, dungeon, Nightfall, Crucible...) |
+| `get_activity_clears` | Completions and fastest clear time per raid, dungeon and strike |
+| `get_weapon_stats` | Lifetime kills and precision per weapon |
+| `get_character` | One character read live: power, stats, and everything equipped |
 | `get_recent_activities` | Recent activities per character (raids, dungeons, Crucible...) with result, duration and K/D/A |
 | `get_activity_report` | Post-game report for one activity: every player, efficiency and per-weapon kills |
 | `transfer_items` ✎ | Moves items to the vault or a character (via the vault; pulls from postmaster; checks space) |

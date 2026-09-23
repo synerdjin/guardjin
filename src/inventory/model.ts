@@ -170,7 +170,7 @@ export function buildInventory(profile: DestinyProfileResponse, defs: Defs): Inv
   return { characters, items, byId, raw: profile };
 }
 
-function buildItem(
+export function buildItem(
   c: DestinyItemComponent,
   location: ItemLocation,
   equipped: boolean,

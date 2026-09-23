@@ -117,13 +117,17 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
       title: 'Item details',
       description:
         'Full details for one item: every perk/trait with its description and selectable options, mods, masterwork, stats (live, without mods, and fully masterworked for armor), armor set bonuses and exotic perk text.',
-      inputSchema: { item: z.string().describe('Item id (preferred) or a unique item name') },
+      inputSchema: {
+        item: z.string().describe('Item id (preferred) or a unique item name'),
+        live: z.boolean().optional().describe('Read this item fresh from Bungie instead of the cached profile (default true; the profile can lag recent changes by a minute or more)'),
+      },
       annotations: READ_ONLY,
     },
-    safe(async ({ item: ref }) => {
+    safe(async ({ item: ref, live }) => {
       const inv = await ctx.profile.inventory();
       const defs = await ctx.manifest.load();
       const item = resolveItem(inv, ref);
+      if (live !== false) await ctx.profile.refreshItem(inv, item);
       return ok(itemDetails(item, defs, locationLabel(item.location, inv.characters)));
     }),
   );

@@ -3,7 +3,7 @@ import { DestinyComponentType, getItem, getProfile, type DestinyProfileResponse 
 import type { AccountService } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
 import type { ManifestLoader } from '../manifest/manifest.js';
-import { buildInventory, type InventoryModel, type Item } from './model.js';
+import { buildInventory, buildItem, type InventoryModel, type Item } from './model.js';
 
 const TTL_MS = 30_000;
 /**
@@ -77,21 +77,40 @@ export class ProfileService {
   }
 
   /**
-   * Overwrites an item's sockets, rolled options and energy with live data. GetProfile can trail
-   * a write by up to a minute, so anything that plans changes to an item should call this first.
+   * Replaces an item's data with live data from GetItem, rebuilding the model item (stats, perks,
+   * mods, energy). GetProfile can trail a write by a minute or more, so anything that reports on or
+   * plans changes to a single item should call this first. Plug writes we made ourselves are
+   * overlaid, since GetItem can lag as well.
    */
   async refreshItem(inv: InventoryModel, item: Item): Promise<void> {
     if (!item.instanceId) return;
-    const account = await this.account.get();
+    const [account, defs] = await Promise.all([this.account.get(), this.manifest.load()]);
     const live = await unwrap(
       getItem(this.http, {
         membershipType: account.membershipType,
         destinyMembershipId: account.membershipId,
         itemInstanceId: item.instanceId,
-        components: [DestinyComponentType.ItemInstances, DestinyComponentType.ItemSockets, DestinyComponentType.ItemReusablePlugs],
+        components: [
+          DestinyComponentType.ItemCommonData,
+          DestinyComponentType.ItemInstances,
+          DestinyComponentType.ItemStats,
+          DestinyComponentType.ItemSockets,
+          DestinyComponentType.ItemReusablePlugs,
+          DestinyComponentType.ItemPlugObjectives,
+        ],
       }),
     );
     const id = item.instanceId;
+
+    const recent = this.recentWrites.get(id);
+    if (recent && Date.now() - recent.at > WRITE_OVERLAY_MS) this.recentWrites.delete(id);
+    const overlay = this.recentWrites.get(id);
+    const sockets = live.sockets?.data?.sockets as { plugHash: number }[] | undefined;
+    if (overlay && sockets) for (const [index, plugHash] of overlay.plugs) if (sockets[index]) sockets[index] = { ...sockets[index], plugHash };
+    const rawInstance = live.instance?.data;
+    const instance =
+      overlay?.energyUsed !== undefined && rawInstance?.energy ? { ...rawInstance, energy: { ...rawInstance.energy, energyUsed: overlay.energyUsed } } : rawInstance;
+
     const raw = inv.raw as unknown as { itemComponents?: Record<string, { data?: Record<string, unknown> } | undefined> };
     const components = (raw.itemComponents ??= {});
     const put = (key: string, data: unknown) => {
@@ -101,19 +120,16 @@ export class ProfileService {
     };
     put('sockets', live.sockets?.data);
     put('reusablePlugs', live.reusablePlugs?.data);
-    put('instances', live.instance?.data);
-    const energy = live.instance?.data?.energy;
-    if (energy && item.armor) item.armor.energy = { capacity: energy.energyCapacity, used: energy.energyUsed };
+    put('instances', instance);
+    put('stats', live.stats?.data);
+    put('plugObjectives', live.plugObjectives?.data);
 
-    const recent = this.recentWrites.get(id);
-    if (!recent) return;
-    if (Date.now() - recent.at > WRITE_OVERLAY_MS) {
-      this.recentWrites.delete(id);
-      return;
+    if (live.item?.data) {
+      const fresh = buildItem(live.item.data, item.location, item.equipped, inv.raw, defs);
+      if (fresh) Object.assign(item, fresh);
+    } else if (instance?.energy && item.armor) {
+      item.armor.energy = { capacity: instance.energy.energyCapacity, used: instance.energy.energyUsed };
     }
-    const sockets = live.sockets?.data?.sockets as { plugHash: number }[] | undefined;
-    if (sockets) for (const [index, plugHash] of recent.plugs) if (sockets[index]) sockets[index] = { ...sockets[index], plugHash };
-    if (recent.energyUsed !== undefined && item.armor?.energy) item.armor.energy = { ...item.armor.energy, used: recent.energyUsed };
   }
 
   /** Raw profile for an arbitrary component set. Not cached. */

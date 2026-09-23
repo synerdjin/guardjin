@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Context } from '../context.js';
-import { executePlugChanges, itemSockets, planPlugChanges, socketOptions, type PlugPlan } from '../sockets/plugs.js';
+import { currentPlugProgress, executePlugChanges, itemSockets, planPlugChanges, socketOptions, type PlugPlan } from '../sockets/plugs.js';
 import { READ_ONLY, WRITE, ok, resolveItem, safe } from './util.js';
 
 const MAX_OPTIONS = 40;
@@ -48,7 +48,10 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
           item: item.name,
           id: item.instanceId,
           energy: energy ? `${energy.used}/${energy.capacity}` : undefined,
-          sockets: sockets.map((s) => ({ index: s.index, category: s.category || undefined, current: s.current?.name, changeable: s.changeable })),
+          sockets: sockets.map((s) => {
+            const progress = currentPlugProgress(inv, defs, item, s.current?.hash);
+            return { index: s.index, category: s.category || undefined, current: s.current?.name, changeable: s.changeable, progress: progress.length ? progress : undefined };
+          }),
         });
       }
       const target = sockets.find((s) => s.index === socket);
@@ -57,7 +60,7 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
       const options = socketOptions(inv, defs, item, socket)
         .map((o) => {
           const d = defs.item(o.hash);
-          return { name: d?.displayProperties.name || `#${o.hash}`, canInsert: o.canInsert, cost: d?.plug?.energyCost?.energyCost || undefined, current: o.hash === target.current?.hash || undefined, fits: d?.plug ? target.accepts.has(d.plug.plugCategoryHash) : false };
+          return { name: d?.displayProperties.name || `#${o.hash}`, canInsert: o.canInsert, reasons: o.reasons, progress: o.progress, cost: d?.plug?.energyCost?.energyCost || undefined, current: o.hash === target.current?.hash || undefined, fits: d?.plug ? target.accepts.has(d.plug.plugCategoryHash) : false };
         })
         .filter((o) => o.fits && o.name && (!q || o.name.toLowerCase().includes(q)))
         .sort((a, b) => Number(b.canInsert) - Number(a.canInsert) || a.name.localeCompare(b.name));
@@ -66,9 +69,16 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
         socket,
         category: target.category || undefined,
         current: target.current?.name,
+        currentProgress: currentPlugProgress(inv, defs, item, target.current?.hash).filter((p) => p.description || p.progress),
         changeable: target.changeable,
         totalOptions: options.length,
-        options: options.slice(0, MAX_OPTIONS).map(({ fits: _f, ...o }) => ({ ...o, canInsert: o.canInsert || undefined, blocked: !o.canInsert || undefined })),
+        options: options.slice(0, MAX_OPTIONS).map(({ fits: _f, canInsert, reasons, progress, ...o }) => ({
+          ...o,
+          canInsert: canInsert || undefined,
+          blocked: !canInsert || undefined,
+          reasons: reasons.length ? reasons : undefined,
+          progress: !canInsert && progress.length ? progress : undefined,
+        })),
         more: options.length > MAX_OPTIONS ? 'Narrow with query to see the rest.' : undefined,
       });
     }),

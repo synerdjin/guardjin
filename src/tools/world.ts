@@ -1,12 +1,31 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DestinyComponentType, getPublicMilestones, getVendor, type DestinyVendorDefinition, type DestinyVendorResponse } from 'bungie-api-ts/destiny2';
+import { DestinyComponentType, getPublicMilestones, getPublicVendors, getVendor, type DestinyVendorDefinition, type DestinyVendorResponse } from 'bungie-api-ts/destiny2';
 import { z } from 'zod';
+import type { Defs } from '../manifest/defs.js';
 import type { Context } from '../context.js';
 import { unwrap } from '../bungie/http.js';
+import { buildCharacters } from '../inventory/model.js';
 import { Rarity } from '../inventory/constants.js';
 import { isCollected } from '../progress/collections.js';
+import { availableActivities, buildCurrentActivity } from '../world/activity.js';
 import { buildWeekly } from '../world/weekly.js';
 import { READ_ONLY, UserError, ok, paginate, resolveCharacter, safe } from './util.js';
+
+/** Vendors often have several definitions under one name; callers try each until one has stock. */
+function vendorCandidates(defs: Defs, vendor: string): number[] {
+  if (/^\d+$/.test(vendor.trim())) return [Number(vendor.trim())];
+  const found = defs.searchTable<DestinyVendorDefinition>('DestinyVendorDefinition', vendor.trim(), 25).filter((v) => v.displayProperties.name);
+  const exact = found.filter((v) => v.displayProperties.name.toLowerCase() === vendor.trim().toLowerCase());
+  const pool = (exact.length ? exact : found).sort((a, b) => Number(b.enabled) - Number(a.enabled));
+  if (!pool.length) throw new UserError(`No vendor matches "${vendor}".`);
+  if (new Set(pool.map((v) => v.displayProperties.name)).size > 1) {
+    throw new UserError(`"${vendor}" matches several vendors: ${[...new Set(pool.map((v) => v.displayProperties.name))].join(', ')}. Use the full name.`);
+  }
+  return pool.map((v) => v.hash);
+}
+
+const costText = (defs: Defs, costs: { itemHash: number; quantity: number }[]) =>
+  costs.length ? costs.map((c) => `${defs.item(c.itemHash)?.displayProperties.name ?? `#${c.itemHash}`}${c.quantity > 1 ? ` x${c.quantity}` : ''}`) : undefined;
 
 export function registerWorldTools(server: McpServer, ctx: Context): void {
   server.registerTool(
@@ -35,6 +54,37 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
   );
 
   server.registerTool(
+    'get_current_activity',
+    {
+      title: 'Current activity',
+      description:
+        'What a character is doing right now: offline, in orbit or a social space, or inside an activity (with its modes, start time and score), plus your fireteam and open slots. ' +
+        '`gearChangesLikely` says whether gear, mod and loadout changes will probably be accepted. Optionally lists the activities the character can launch.',
+      inputSchema: {
+        character: z.string().optional().describe('Character id or class name. Default: most recently played'),
+        available: z.boolean().optional().describe('Also list activities the character can launch now'),
+        query: z.string().optional().describe('With available: case-insensitive substring of the activity or modifier name'),
+        limit: z.number().int().min(1).max(100).optional().describe('With available: default 30'),
+      },
+      annotations: READ_ONLY,
+    },
+    safe(async ({ character, available, query, limit }) => {
+      const [profile, defs] = await Promise.all([
+        ctx.profile.components([DestinyComponentType.Characters, DestinyComponentType.CharacterActivities, DestinyComponentType.Transitory]),
+        ctx.manifest.load(),
+      ]);
+      const c = resolveCharacter({ characters: buildCharacters(profile, defs) }, character);
+      const activities = profile.characterActivities?.data?.[c.id];
+      const current = buildCurrentActivity(activities, profile.profileTransitoryData?.data, defs);
+      const q = query?.trim().toLowerCase();
+      const list = available
+        ? availableActivities(activities, defs).filter((a) => !q || a.name.toLowerCase().includes(q) || a.modifiers.some((m) => m.toLowerCase().includes(q)))
+        : undefined;
+      return ok({ character: c.className, ...current, available: list && paginate(list, 0, limit ?? 30) });
+    }),
+  );
+
+  server.registerTool(
     'get_vendor',
     {
       title: 'Vendor inventory',
@@ -44,31 +94,34 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
       inputSchema: {
         vendor: z.string().describe('Vendor name, e.g. "Xûr", or a vendor hash'),
         character: z.string().optional().describe('Character id or class name whose sales to show. Default: most recently played'),
-        onlyNew: z.boolean().optional().describe('Hide items you already have collected'),
+        public: z.boolean().optional().describe('Use the public, character-independent stock: works when the personal lookup fails, but has no ownership info'),
+        onlyNew: z.boolean().optional().describe('Hide items you already have collected (not available with public)'),
         query: z.string().optional().describe('Case-insensitive substring of the item name or type'),
         limit: z.number().int().min(1).max(100).optional().describe('Default 50'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ vendor, character, onlyNew, query, limit }) => {
+    safe(async ({ vendor, character, onlyNew, query, limit, public: publicStock }) => {
       const defs = await ctx.manifest.load();
       const account = await ctx.account.get();
       const inv = await ctx.profile.inventory();
       const char = resolveCharacter(inv, character);
 
-      // Vendors often have several definitions under one name; only the live one answers with sales.
-      let candidates: number[];
-      if (/^\d+$/.test(vendor.trim())) {
-        candidates = [Number(vendor.trim())];
-      } else {
-        const found = defs.searchTable<DestinyVendorDefinition>('DestinyVendorDefinition', vendor.trim(), 25).filter((v) => v.displayProperties.name);
-        const exact = found.filter((v) => v.displayProperties.name.toLowerCase() === vendor.trim().toLowerCase());
-        const pool = (exact.length ? exact : found).sort((a, b) => Number(b.enabled) - Number(a.enabled));
-        if (!pool.length) throw new UserError(`No vendor matches "${vendor}".`);
-        if (new Set(pool.map((v) => v.displayProperties.name)).size > 1) {
-          throw new UserError(`"${vendor}" matches several vendors: ${[...new Set(pool.map((v) => v.displayProperties.name))].join(', ')}. Use the full name.`);
-        }
-        candidates = pool.map((v) => v.hash);
+      const candidates = vendorCandidates(defs, vendor);
+      const q = query?.trim().toLowerCase();
+
+      if (publicStock) {
+        const pub = await unwrap(getPublicVendors(ctx.http, { components: [DestinyComponentType.Vendors, DestinyComponentType.VendorSales] }));
+        const hash = candidates.find((h) => Object.keys(pub.sales?.data?.[h]?.saleItems ?? {}).length);
+        if (hash === undefined) throw new UserError(`${defs.vendor(candidates[0])?.displayProperties.name ?? vendor} has no public stock right now.`);
+        const items = Object.values(pub.sales?.data?.[hash]?.saleItems ?? {})
+          .filter((s) => s.itemHash)
+          .map((s) => {
+            const def = defs.item(s.itemHash);
+            return { name: def?.displayProperties.name ?? `#${s.itemHash}`, type: def?.itemTypeDisplayName, rarity: Rarity[def?.inventory?.tierType ?? 0], quantity: s.quantity > 1 ? s.quantity : undefined, cost: costText(defs, s.costs) };
+          })
+          .filter((i) => !q || i.name.toLowerCase().includes(q) || (i.type ?? '').toLowerCase().includes(q));
+        return ok({ vendor: defs.vendor(hash)?.displayProperties.name ?? hash, public: true, nextRefresh: pub.vendors?.data?.[hash]?.nextRefreshDate, ...paginate(items, 0, limit ?? 50) });
       }
 
       let response: DestinyVendorResponse | undefined;
@@ -97,11 +150,19 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
       if (!response) {
         throw new UserError(`${defs.vendor(candidates[0])?.displayProperties.name ?? vendor} has nothing for sale right now${lastError ? ` (${(lastError as Error).message})` : ''}.`);
       }
+      // Personal sales often omit costs; the public stock (Xûr) has them.
+      const publicCosts = new Map<number, { itemHash: number; quantity: number }[]>();
+      if (Object.values(response.sales?.data ?? {}).some((s) => !s.costs.length)) {
+        try {
+          const pub = await unwrap(getPublicVendors(ctx.http, { components: [DestinyComponentType.Vendors, DestinyComponentType.VendorSales] }));
+          for (const sale of Object.values(pub.sales?.data?.[vendorHash]?.saleItems ?? {})) if (sale.costs.length) publicCosts.set(sale.itemHash, sale.costs);
+        } catch {
+          // Costs are a nicety; the personal stock is still valid without them.
+        }
+      }
       const profile = await ctx.profile.components([DestinyComponentType.Collectibles]);
       const owned = new Set(inv.items.map((i) => i.hash));
       const charIds = inv.characters.map((c) => c.id);
-      const q = query?.trim().toLowerCase();
-
       const items = Object.values(response.sales?.data ?? {})
         .filter((s) => s.itemHash)
         .map((s) => {
@@ -112,7 +173,7 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
             type: def?.itemTypeDisplayName,
             rarity: Rarity[def?.inventory?.tierType ?? 0],
             quantity: s.quantity > 1 ? s.quantity : undefined,
-            cost: s.costs.length ? s.costs.map((c) => `${defs.item(c.itemHash)?.displayProperties.name ?? `#${c.itemHash}`}${c.quantity > 1 ? ` x${c.quantity}` : ''}`) : undefined,
+            cost: costText(defs, s.costs.length ? s.costs : (publicCosts.get(s.itemHash) ?? [])),
             collected,
             inInventory: owned.has(s.itemHash) || undefined,
             available: s.saleStatus === 0 || undefined,

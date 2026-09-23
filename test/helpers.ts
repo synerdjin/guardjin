@@ -19,6 +19,8 @@ export function fixtureDefs(): Defs {
     'DestinyObjectiveDefinition', 'DestinyActivityDefinition', 'DestinyDestinationDefinition',
     'DestinyMilestoneDefinition', 'DestinyVendorDefinition', 'DestinyCollectibleDefinition', 'DestinyRecordDefinition',
     'DestinyLoadoutNameDefinition', 'DestinyActivityModifierDefinition', 'DestinySocketTypeDefinition', 'DestinyLoadoutConstantsDefinition',
+    'DestinyProgressionDefinition', 'DestinyFactionDefinition', 'DestinySeasonDefinition', 'DestinySeasonPassDefinition',
+    'DestinyPresentationNodeDefinition', 'DestinySocialCommendationDefinition', 'DestinySocialCommendationNodeDefinition', 'DestinyActivityModeDefinition',
   ]) {
     db.exec(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY NOT NULL, json BLOB)`);
     const insert = db.prepare(`INSERT INTO ${table} (id, json) VALUES (?, ?)`);

@@ -1,6 +1,14 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type {
   DestinyActivityDefinition,
+  DestinyActivityModeDefinition,
+  DestinySocialCommendationNodeDefinition,
+  DestinySocialCommendationDefinition,
+  DestinySeasonPassDefinition,
+  DestinySeasonDefinition,
+  DestinyProgressionDefinition,
+  DestinyPresentationNodeDefinition,
+  DestinyFactionDefinition,
   DestinyClassDefinition,
   DestinyCollectibleDefinition,
   DestinyDamageTypeDefinition,
@@ -106,6 +114,30 @@ export class Defs {
   }
   activity(hash: number | undefined) {
     return this.get<DestinyActivityDefinition>('DestinyActivityDefinition', hash);
+  }
+  progression(hash: number | undefined) {
+    return this.get<DestinyProgressionDefinition>('DestinyProgressionDefinition', hash);
+  }
+  faction(hash: number | undefined) {
+    return this.get<DestinyFactionDefinition>('DestinyFactionDefinition', hash);
+  }
+  season(hash: number | undefined) {
+    return this.get<DestinySeasonDefinition>('DestinySeasonDefinition', hash);
+  }
+  seasonPass(hash: number | undefined) {
+    return this.get<DestinySeasonPassDefinition>('DestinySeasonPassDefinition', hash);
+  }
+  presentationNode(hash: number | undefined) {
+    return this.get<DestinyPresentationNodeDefinition>('DestinyPresentationNodeDefinition', hash);
+  }
+  commendation(hash: number | undefined) {
+    return this.get<DestinySocialCommendationDefinition>('DestinySocialCommendationDefinition', hash);
+  }
+  commendationNode(hash: number | undefined) {
+    return this.get<DestinySocialCommendationNodeDefinition>('DestinySocialCommendationNodeDefinition', hash);
+  }
+  activityMode(hash: number | undefined) {
+    return this.get<DestinyActivityModeDefinition>('DestinyActivityModeDefinition', hash);
   }
   milestone(hash: number | undefined) {
     return this.get<DestinyMilestoneDefinition>('DestinyMilestoneDefinition', hash);

@@ -25,10 +25,36 @@ export interface Socket {
   changeable: boolean;
 }
 
-interface PlugOption {
+export interface PlugProgress {
+  description: string;
+  progress: string;
+  complete?: boolean;
+}
+
+export interface PlugOption {
   hash: number;
   /** Known to be insertable now. False = listed but blocked (e.g. not unlocked). */
   canInsert: boolean;
+  /** Why it can't be inserted, in the game's words. */
+  reasons: string[];
+  /** Unlock progress, e.g. "Enemies defeated 45/100". */
+  progress: PlugProgress[];
+}
+
+function describeProgress(list: { objectiveHash: number; progress?: number; completionValue: number; complete: boolean; visible?: boolean }[] | undefined, defs: Defs): PlugProgress[] {
+  return (list ?? [])
+    .filter((o) => o.visible !== false)
+    .map((o) => ({
+      description: (defs.objective(o.objectiveHash)?.progressDescription ?? '').trim(),
+      progress: `${o.progress ?? 0}/${o.completionValue}`,
+      ...(o.complete ? { complete: true } : {}),
+    }));
+}
+
+/** Progress objectives on the plug currently in a socket (catalyst kills, Deepsight attunement, trackers...). */
+export function currentPlugProgress(inv: InventoryModel, defs: Defs, item: Item, plugHash: number | undefined): PlugProgress[] {
+  if (!item.instanceId || !plugHash) return [];
+  return describeProgress(inv.raw.itemComponents?.plugObjectives?.data?.[item.instanceId]?.objectivesPerPlug?.[plugHash], defs);
 }
 
 /** The character used for socket actions on an item: its holder, or the most recently played one for vault items. */
@@ -75,14 +101,21 @@ export function socketOptions(inv: InventoryModel, defs: Defs, item: Item, socke
   const entry = def?.sockets?.socketEntries[socketIndex];
   if (!entry || !item.instanceId) return [];
   const out = new Map<number, PlugOption>();
-  const add = (hash: number, canInsert: boolean) => {
+  const add = (hash: number, canInsert: boolean, source?: { insertFailIndexes?: number[]; plugObjectives?: Parameters<typeof describeProgress>[0] }) => {
     if (!hash) return;
     const prev = out.get(hash);
-    out.set(hash, { hash, canInsert: canInsert || !!prev?.canInsert });
+    const rules = defs.item(hash)?.plug?.insertionRules ?? [];
+    const reasons = canInsert ? [] : (source?.insertFailIndexes ?? []).map((i) => rules[i]?.failureMessage).filter((m): m is string => !!m);
+    out.set(hash, {
+      hash,
+      canInsert: canInsert || !!prev?.canInsert,
+      reasons: canInsert || prev?.canInsert ? [] : [...new Set([...(prev?.reasons ?? []), ...reasons])],
+      progress: prev?.progress.length ? prev.progress : describeProgress(source?.plugObjectives, defs),
+    });
   };
 
   // Rolled options (weapon perk columns, some cosmetics) come per item instance.
-  for (const p of inv.raw.itemComponents?.reusablePlugs?.data?.[item.instanceId]?.plugs?.[socketIndex] ?? []) add(p.plugItemHash, p.canInsert !== false && p.enabled !== false);
+  for (const p of inv.raw.itemComponents?.reusablePlugs?.data?.[item.instanceId]?.plugs?.[socketIndex] ?? []) add(p.plugItemHash, p.canInsert !== false && p.enabled !== false, p);
 
   // Shared plug sets (mods, shaders, ornaments): the profile/character components say what is unlocked.
   if (entry.reusablePlugSetHash) {
@@ -90,7 +123,7 @@ export function socketOptions(inv: InventoryModel, defs: Defs, item: Item, socke
     const fromProfile = inv.raw.profilePlugSets?.data?.plugs?.[entry.reusablePlugSetHash];
     const fromCharacter = characterId ? inv.raw.characterPlugSets?.data?.[characterId]?.plugs?.[entry.reusablePlugSetHash] : undefined;
     if (fromProfile || fromCharacter) {
-      for (const p of [...(fromProfile ?? []), ...(fromCharacter ?? [])]) add(p.plugItemHash, p.canInsert !== false && p.enabled !== false);
+      for (const p of [...(fromProfile ?? []), ...(fromCharacter ?? [])]) add(p.plugItemHash, p.canInsert !== false && p.enabled !== false, p);
     } else {
       for (const p of defs.plugSet(entry.reusablePlugSetHash)?.reusablePlugItems ?? []) add(p.plugItemHash, true);
     }

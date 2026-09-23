@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { itemSockets, planPlugChanges, type PlugRequest } from '../src/sockets/plugs.js';
+import { currentPlugProgress, itemSockets, planPlugChanges, socketOptions, type PlugRequest } from '../src/sockets/plugs.js';
 import { WARLOCK, fixtureDefs, makeInventory, makeItem } from './helpers.js';
 
 const defs = fixtureDefs();
@@ -126,7 +126,7 @@ describe('recent-write overlay', () => {
       },
       ErrorCode: 1,
     })) as never;
-    const profile = new ProfileService(http, { get: async () => ({ membershipType: 3, membershipId: '1' }) } as never, {} as never);
+    const profile = new ProfileService(http, { get: async () => ({ membershipType: 3, membershipId: '1' }) } as never, { load: async () => defs } as never);
 
     profile.recordPlug('helm1', 0, GRENADE_MOD, 4);
     await profile.refreshItem(inv, helm);
@@ -139,5 +139,53 @@ describe('recent-write overlay', () => {
     const p = planPlugChanges(inv, defs, [{ item: helm, plug: 'Grenade Mod' }]);
     expect(p.changes).toEqual([]);
     expect(p.unchanged).toHaveLength(1);
+  });
+
+  it('rebuilds the item from live data, keeping its location and equipped state', async () => {
+    const { ProfileService } = await import('../src/inventory/profile.js');
+    const { inv, helm } = setup({ capacity: 10, used: 3 });
+    const live = {
+      item: { data: { itemHash: HELMET, itemInstanceId: 'helm1', quantity: 1, bucketHash: 3448274439, state: 0, lockable: true, transferStatus: 0 } },
+      sockets: { data: { sockets: [EMPTY_GENERAL, ASHES_TO_ASSETS, EMPTY_HEAD, EMPTY_HEAD, DEFAULT_SHADER, UPGRADE_ARMOR].map((plugHash) => ({ plugHash, isEnabled: true, isVisible: true })) } },
+      instance: { data: { energy: { energyCapacity: 10, energyUsed: 3 }, primaryStat: { statHash: 0, value: 777 } } },
+    };
+    const http = (async () => ({ Response: live, ErrorCode: 1 })) as never;
+    const profile = new ProfileService(http, { get: async () => ({ membershipType: 3, membershipId: '1' }) } as never, { load: async () => defs } as never);
+    helm.equipped = true;
+
+    profile.recordPlug('helm1', 0, GRENADE_MOD, 4);
+    await profile.refreshItem(inv, helm);
+    expect(helm).toMatchObject({ power: 777, equipped: true, location: { type: 'character', characterId: WARLOCK } });
+    expect(helm.armor?.energy).toEqual({ capacity: 10, used: 4 });
+    expect(inv.byId.get('helm1')).toBe(helm);
+  });
+});
+
+describe('plug details', () => {
+  const ENEMIES_DEFEATED = 3725354261; // objective "Enemies Defeated"
+
+  it('shows unlock progress for blocked options', () => {
+    const { inv, helm } = setup();
+    (inv.raw.profilePlugSets!.data!.plugs as Record<number, unknown[]>)[GENERAL_SET] = [
+      { plugItemHash: MINOR_GRENADE_MOD, canInsert: false, enabled: true, insertFailIndexes: [], plugObjectives: [{ objectiveHash: ENEMIES_DEFEATED, progress: 45, completionValue: 100, complete: false, visible: true }] },
+    ];
+    const option = socketOptions(inv, defs, helm, 0).find((o) => o.hash === MINOR_GRENADE_MOD)!;
+    expect(option.canInsert).toBe(false);
+    expect(option.progress).toEqual([{ description: 'Enemies Defeated', progress: '45/100' }]);
+  });
+
+  it('gives no reasons or progress for options that can be inserted', () => {
+    const { inv, helm } = setup();
+    const option = socketOptions(inv, defs, helm, 0).find((o) => o.hash === GRENADE_MOD)!;
+    expect(option).toMatchObject({ canInsert: true, reasons: [], progress: [] });
+  });
+
+  it('reads progress on the plug currently in a socket', () => {
+    const { inv, helm } = setup();
+    (inv.raw.itemComponents as unknown as Record<string, unknown>).plugObjectives = {
+      data: { helm1: { objectivesPerPlug: { [ASHES_TO_ASSETS]: [{ objectiveHash: ENEMIES_DEFEATED, progress: 6029, completionValue: 1, complete: true, visible: true }] } } },
+    };
+    expect(currentPlugProgress(inv, defs, helm, ASHES_TO_ASSETS)).toEqual([{ description: 'Enemies Defeated', progress: '6029/1', complete: true }]);
+    expect(currentPlugProgress(inv, defs, helm, GRENADE_MOD)).toEqual([]);
   });
 });

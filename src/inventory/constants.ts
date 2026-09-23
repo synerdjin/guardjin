@@ -14,6 +14,9 @@ export const Buckets = {
   Ghost: 4023194814,
   /** Character pursuits: quests, bounties and quest items. */
   Quests: 1345459588,
+  Consumables: 1469714392,
+  Materials: 3865314626,
+  Modifications: 3313201758,
 } as const;
 
 export const ARMOR_BUCKETS = [Buckets.Helmet, Buckets.Gauntlets, Buckets.Chest, Buckets.Legs, Buckets.ClassItem] as const;
