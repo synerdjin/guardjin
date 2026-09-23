@@ -104,6 +104,7 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
         moves: plan.transfers.steps.map((s) => `${s.item.name}: ${s.action}`),
         problems: plan.transfers.errors.map((e) => e.error),
         missingItems: plan.missing.length || undefined,
+        warnings: plan.conflicts.length ? plan.conflicts.map((c) => `The game will skip this: ${c}`) : undefined,
       };
       if (dryRun) return ok({ dryRun: true, alreadyActive: plan.alreadyActive || undefined, ...summary });
 

@@ -5,7 +5,7 @@ import { unwrap } from '../bungie/http.js';
 import { UserError } from '../errors.js';
 import type { InventoryModel, Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
-import { planTransfers, type TransferPlan } from '../vault/actions.js';
+import { planEquip, planTransfers, type TransferPlan } from '../vault/actions.js';
 import { buildLoadouts, type Loadout } from './loadouts.js';
 
 export interface LoadoutSlot {
@@ -92,6 +92,11 @@ export interface EquipLoadoutPlan {
   transfers: TransferPlan;
   /** Saved items that no longer exist. The game equips the rest. */
   missing: string[];
+  /**
+   * Items the game will skip because of the one-exotic-weapon / one-exotic-armor rule: it silently
+   * leaves them unequipped when a currently equipped exotic stays in a slot the loadout doesn't fill.
+   */
+  conflicts: string[];
   alreadyActive: boolean;
 }
 
@@ -107,6 +112,7 @@ export function planEquipLoadout(inv: InventoryModel, defs: Defs, slot: LoadoutS
     slot: slot as EquipLoadoutPlan['slot'],
     transfers: planTransfers(inv, defs, elsewhere.map((item) => ({ item, to: { type: 'character', characterId: slot.characterId } }))),
     missing: slot.loadout.items.filter((i) => i.missing).map((i) => i.id),
+    conflicts: planEquip(inv, defs, slot.characterId, items).errors.filter((e) => /exotic/i.test(e.error)).map((e) => e.error),
     alreadyActive: slot.loadout.active,
   };
 }

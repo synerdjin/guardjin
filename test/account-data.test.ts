@@ -162,6 +162,14 @@ describe('buildCurrentActivity', () => {
     expect(offline).toMatchObject({ state: 'offline', gearChangesLikely: true, since: undefined });
   });
 
+  it('recognizes orbit: a nameless activity with no modes', () => {
+    // Shape observed live: hash 82913930, no mode types, mode hash is the "none" sentinel.
+    const orbit = buildCurrentActivity({ currentActivityHash: 82913930, currentActivityModeHash: 2166136261, currentActivityModeTypes: undefined, currentActivityModeHashes: undefined } as never, undefined, defs);
+    expect(orbit).toMatchObject({ state: 'orbit-or-social', gearChangesLikely: true, activity: 'Orbit', modes: [] });
+    // An unknown hash with the same shape (Bungie renumbering) is still treated as orbit.
+    expect(buildCurrentActivity({ currentActivityHash: 123, currentActivityModeTypes: [], currentActivityModeHashes: [] } as never, undefined, defs).state).toBe('orbit-or-social');
+  });
+
   it('decodes fireteam status flags and lists launchable activities', () => {
     const current = buildCurrentActivity(
       { currentActivityHash: TOWER, currentActivityModeTypes: [40], currentActivityModeHashes: [] } as never,

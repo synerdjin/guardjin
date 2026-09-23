@@ -10,7 +10,7 @@ const TTL_MS = 30_000;
  * Bungie's read endpoints can trail a write by a minute or more (and flip between old and new
  * state meanwhile), so writes we made ourselves are overlaid on reads for this long.
  */
-const WRITE_OVERLAY_MS = 3 * 60_000;
+const WRITE_OVERLAY_MS = 5 * 60_000;
 
 interface RecentWrites {
   at: number;

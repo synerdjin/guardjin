@@ -3,6 +3,8 @@ import type { Defs } from '../manifest/defs.js';
 
 /** DestinyActivityModeType.Social */
 const SOCIAL_MODE = 40;
+/** The activity Bungie reports while a character is in orbit; it has no name and no modes. */
+const ORBIT_ACTIVITY_HASH = 82913930;
 /** DestinyPartyMemberStates flags. */
 const PARTY_STATUS: [number, string][] = [[1, 'member'], [2, 'posse'], [4, 'groupable'], [8, 'created-player']];
 
@@ -34,13 +36,16 @@ export function buildCurrentActivity(
   const def = hash ? defs.activity(hash) : undefined;
   const name = def?.displayProperties.name || undefined;
   const modeTypes = activities?.currentActivityModeTypes ?? [];
-  const social = modeTypes.includes(SOCIAL_MODE) || /^(orbit|social|(the )?tower|h\.e\.l\.m\.)/i.test(name ?? '');
+  const modeHashes = (activities?.currentActivityModeHashes ?? []).filter((h) => defs.activityMode(h)?.displayProperties?.name);
+  // Orbit is a known activity, or (in case Bungie renumbers it) any activity with no name and no modes.
+  const orbit = hash === ORBIT_ACTIVITY_HASH || (!!hash && !name && !modeTypes.length && !modeHashes.length);
+  const social = orbit || modeTypes.includes(SOCIAL_MODE) || /^(orbit|social|(the )?tower|h\.e\.l\.m\.)/i.test(name ?? '');
   const state: PlayState = !hash ? 'offline' : social ? 'orbit-or-social' : 'in-activity';
   const current = transitory?.currentActivity;
   return {
     state,
     gearChangesLikely: state !== 'in-activity',
-    activity: name,
+    activity: name ?? (orbit ? 'Orbit' : undefined),
     modes: (activities?.currentActivityModeHashes ?? []).map((h) => defs.activityMode(h)?.displayProperties?.name ?? '').filter(Boolean),
     since: hash ? activities?.dateActivityStarted : undefined,
     fireteam: (transitory?.partyMembers ?? []).map((m) => ({ name: m.displayName, status: PARTY_STATUS.filter(([bit]) => (m.status & bit) !== 0).map(([, n]) => n) })),

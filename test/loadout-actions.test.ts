@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chooseIdentifiers, loadoutNames, planEquipLoadout, resolveSlot } from '../src/loadouts/actions.js';
 import { UserError } from '../src/errors.js';
+import { Buckets } from '../src/inventory/constants.js';
 import { WARLOCK, fixtureDefs, makeInventory, makeItem } from './helpers.js';
 
 const defs = fixtureDefs();
@@ -76,5 +77,22 @@ describe('planEquipLoadout', () => {
   it('refuses an empty slot', () => {
     const inv = setup([empty]);
     expect(() => planEquipLoadout(inv, defs, resolveSlot(inv, defs, WARLOCK, 0))).toThrow(/slot 0 is empty/);
+  });
+
+  it('warns when a loadout exotic conflicts with an exotic that stays equipped', () => {
+    // Observed live: the game skipped an exotic kinetic because an exotic energy weapon stayed equipped
+    // (the loadout's energy item had been dismantled), and did so without an error.
+    const exoticEnergy = makeItem({ instanceId: 'lance', name: 'Graviton Lance', kind: 'weapon', isExotic: true, slot: 'Energy Weapons', bucketHash: Buckets.Energy, equipped: true, location: { type: 'character', characterId: WARLOCK } });
+    const exoticKinetic = makeItem({ instanceId: 'arb', name: 'Arbalest', kind: 'weapon', isExotic: true, slot: 'Kinetic Weapons', bucketHash: Buckets.Kinetic, location: { type: 'vault' } });
+    const inv = makeInventory([exoticEnergy, exoticKinetic]);
+    inv.raw = { characterLoadouts: { data: { [WARLOCK]: { loadouts: [saved(['arb', 'gone'])] } } } } as unknown as typeof inv.raw;
+    const plan = planEquipLoadout(inv, defs, resolveSlot(inv, defs, WARLOCK, 0));
+    expect(plan.conflicts).toHaveLength(1);
+    expect(plan.conflicts[0]).toMatch(/Arbalest conflicts with the equipped exotic Graviton Lance/);
+
+    // With no other exotic in play there is nothing to warn about.
+    const clean = makeInventory([exoticKinetic]);
+    clean.raw = inv.raw;
+    expect(planEquipLoadout(clean, defs, resolveSlot(clean, defs, WARLOCK, 0)).conflicts).toEqual([]);
   });
 });
