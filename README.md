@@ -1,0 +1,130 @@
+# guardjin
+
+An MCP server for **Destiny 2**. It connects Claude (Claude Code, Claude Desktop, or any MCP client) to your Bungie account so it can:
+
+- **Suggest builds from gear you actually own**: subclass options, exotics, weapons, and an armor optimizer for Armor 3.0 (stats, archetypes, set bonuses, tiers, tuning, masterwork).
+- **Manage your vault**: capacity overview, duplicates, dominated armor, community wishlist (god roll / trash) verdicts, cleanup suggestions, and actions to move, equip, lock and pull items.
+
+Game data comes from Bungie's manifest and is read at runtime (stat names, sets, perks, bucket sizes), so the server keeps working as the game changes.
+
+## One-time setup
+
+1. **Register a Bungie app** at <https://www.bungie.net/en/Application> → *Create New App*:
+   - **OAuth Client Type:** `Confidential`. This gives refresh tokens valid for about 90 days. With `Public` you would have to log in every hour.
+   - **Redirect URL:** `https://localhost:7777/callback`
+   - **Scope:** tick *Read your Destiny 2 information (Vault, Inventory, and Vendors)* and *Move or equip Destiny gear and other items*.
+   - **Origin Header:** leave empty.
+2. **Configure:** copy `.env.example` to `.env` and fill in `BUNGIE_API_KEY`, `BUNGIE_CLIENT_ID` and `BUNGIE_CLIENT_SECRET` from the app page.
+3. **Build and log in:**
+
+   ```bash
+   npm install
+   npm run build
+   npm run auth
+   ```
+
+   `npm run auth` opens Bungie's consent page. After you approve, your browser is redirected to `https://localhost:7777/callback`. It will warn about the self-signed certificate, which is expected; continue to localhost. If the redirect page doesn't load, paste the URL from the address bar into the terminal instead. Tokens are saved to `~/.guardjin/tokens.json` and refresh automatically.
+4. **Register the server with your MCP client.**
+
+   Claude Code:
+
+   ```bash
+   claude mcp add guardjin -s user -- node C:/Users/genem/Code/guardjin/dist/index.js
+   ```
+
+   Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
+
+   ```json
+   {
+     "mcpServers": {
+       "guardjin": { "command": "node", "args": ["C:/Users/genem/Code/guardjin/dist/index.js"] }
+     }
+   }
+   ```
+
+   The server reads `.env` from the project folder, so you don't need to add env vars to the client config (you can if you prefer).
+
+On first start, the server downloads the Destiny manifest (about 37 MB) into `~/.guardjin/manifest/`. It downloads again only when Bungie ships a game update.
+
+## Try it
+
+- *"Suggest a Warlock build for Grandmaster Nightfalls around grenades."* You can also use the **`suggest_build`** prompt.
+- *"Find me the best Hunter armor with 150+ Weapons and 100 Health using Celestial Nighthawk."*
+- *"How full is my vault? What can I dismantle?"* You can also use the **`clean_vault`** prompt.
+- *"Which of my Fatebringers are god rolls?"*
+- *"Move all my Titan armor from my Hunter to the vault."*
+- *"Lock everything the wishlist marks as a god roll."*
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `auth_status` | Config and login status, linked Destiny account |
+| `list_characters` | Characters with class, power, subclass and stat totals |
+| `search_inventory` | Filters gear by name, slot, class, rarity, location, perk, element, min stats and tier |
+| `get_item_details` | Perks with descriptions and options, mods, masterwork, rolled/no-mod/masterworked stats, set bonus |
+| `get_equipped_loadout` | A character's equipped gear, subclass setup, stats and active set bonuses |
+| `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
+| `lookup_definition` | Searches game data (exotics, perks, mods, aspects, fragments, set bonuses), including items you don't own |
+| `optimize_armor` | Best 5-piece armor combinations for stat minimums and priorities, a required exotic, set bonuses, and stat mods |
+| `vault_summary` | Vault use vs capacity, full character buckets, postmaster counts |
+| `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
+| `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence |
+| `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
+| `transfer_items` ✎ | Moves items to the vault or a character (via the vault; pulls from postmaster; checks space) |
+| `equip_items` ✎ | Equips items, moving them first; checks class and exotic limits |
+| `set_lock_state` ✎ | Locks or unlocks items |
+| `pull_from_postmaster` ✎ | Pulls gear out of the postmaster |
+
+✎ = changes your inventory. Every write tool has a `dryRun` option. Bungie's API **cannot dismantle** items, so the cleanup flow is: lock what you keep, then dismantle the unlocked items in game. Equipping requires the character to be in orbit, in a social space, or offline.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BUNGIE_API_KEY` | (required) | API key from your Bungie app |
+| `BUNGIE_CLIENT_ID` / `BUNGIE_CLIENT_SECRET` | (required) | OAuth client credentials |
+| `GUARDJIN_HOME` | `~/.guardjin` | Tokens, manifest and wishlist cache |
+| `GUARDJIN_LANGUAGE` | `en` | Manifest language (`de`, `fr`, `es`, `ja`, ...) |
+| `GUARDJIN_REDIRECT_PORT` | `7777` | Must match the redirect URL registered with Bungie |
+| `GUARDJIN_WISHLIST_URL` | voltron.txt | Any DIM-format wishlist URL |
+
+## How it works
+
+```
+src/
+  index.ts             MCP server (stdio): registers tools and prompts
+  context.ts           wires the services together
+  config.ts            env/.env loading, data directory
+  cli/auth.ts          `npm run auth` OAuth login
+  bungie/              HTTP client (API key, token, throttling, action pacing), OAuth tokens, account lookup
+  manifest/            downloads the world SQLite DB per game version; name index; typed definition lookups
+  inventory/           GetProfile → normalized items (Armor 3.0 stat math, weapon perk columns), subclasses
+  builds/optimizer.ts  armor search: Pareto pruning + branch-and-bound over 5 slots, stat-mod assignment
+  vault/               analysis (capacity, duplicates, dominance, cleanup), wishlist parser/matcher, transfer/equip/lock
+  tools/               MCP tool definitions, one file per group
+  prompts/             suggest_build and clean_vault workflow prompts
+```
+
+A few details:
+
+- **Armor stats.** The optimizer uses each piece's rolled stats (its `armor_stats` plugs) plus tuning and a full masterwork, which is +5 to the three lowest stats, per the in-game text. Armor mods are ignored so pieces are compared fairly. Stat mods are added back as +10 (major) or +5 (minor), one per piece.
+- **Wishlist matching** compares perk *names*, so enhanced perks match their base versions. It checks every selectable option on the weapon, not only the perk currently selected.
+- **Dominated armor:** another piece of the same class and slot (and the same exotic) that has at least the same tier, at least as good a set, and every masterworked stat ≥ this one.
+
+## Development
+
+```bash
+npm run build       # compile to dist/
+npm test            # vitest (uses a small extract of real manifest data in test/fixtures)
+npm run typecheck   # src + tests
+npm run inspect     # MCP Inspector against dist/index.js
+```
+
+### Adding a feature
+
+1. Put the logic in a module under `src/` (for example `src/vendors/`), taking `InventoryModel` and `Defs` as inputs so it can be tested without the network.
+2. Add `src/tools/<group>.ts` exporting `register<Group>Tools(server, ctx)`. Wrap handlers in `safe()` and return `ok(data)`. Mark write tools with the `WRITE` annotations.
+3. Register it in `src/index.ts`, and add tests under `test/`.
+
+Ideas on the roadmap: DIM Sync (tags and notes), in-game loadout slots (EquipLoadout/SnapshotLoadout), applying mods with `InsertSocketPlugFree`, activity and raid stats, and vendor and weekly-rotation lookups.

@@ -1,0 +1,36 @@
+{
+  "name": "guardjin",
+  "version": "0.1.0",
+  "description": "MCP server for Destiny 2: build suggestions from your gear and vault management via the Bungie API",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "guardjin": "dist/index.js",
+    "guardjin-auth": "dist/cli/auth.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/index.js",
+    "auth": "node dist/cli/auth.js",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "bungie-api-ts": "^5.10.0",
+    "fflate": "^0.8.3",
+    "selfsigned": "^5.5.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~5.9",
+    "vitest": "^5.0.1"
+  }
+}
