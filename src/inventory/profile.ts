@@ -1,5 +1,5 @@
 import type { HttpClient } from 'bungie-api-ts/http';
-import { DestinyComponentType, getProfile } from 'bungie-api-ts/destiny2';
+import { DestinyComponentType, getProfile, type DestinyProfileResponse } from 'bungie-api-ts/destiny2';
 import type { AccountService } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
 import type { ManifestLoader } from '../manifest/manifest.js';
@@ -13,11 +13,15 @@ const COMPONENTS = [
   DestinyComponentType.Characters,
   DestinyComponentType.CharacterInventories,
   DestinyComponentType.CharacterEquipment,
+  DestinyComponentType.CharacterLoadouts,
   DestinyComponentType.ItemInstances,
   DestinyComponentType.ItemStats,
   DestinyComponentType.ItemSockets, // also returns profile/character plug sets
   DestinyComponentType.ItemReusablePlugs,
 ];
+
+/** Enough to read quests and bounties with their objective progress. */
+const PURSUIT_COMPONENTS = [DestinyComponentType.Characters, DestinyComponentType.CharacterInventories, DestinyComponentType.ItemObjectives];
 
 /** Fetches the user's profile and caches the normalized inventory for a short time. */
 export class ProfileService {
@@ -43,17 +47,34 @@ export class ProfileService {
     this.cached = undefined;
   }
 
+  /**
+   * Raw profile with character pursuits and their objectives. Not cached: objective progress
+   * changes while the user plays, and this response is small.
+   */
+  async pursuits(): Promise<DestinyProfileResponse> {
+    return this.request(PURSUIT_COMPONENTS);
+  }
+
+  /** Raw profile for an arbitrary component set. Not cached. */
+  async components(components: DestinyComponentType[]): Promise<DestinyProfileResponse> {
+    return this.request(components);
+  }
+
   private async fetch(): Promise<InventoryModel> {
-    const [account, defs] = await Promise.all([this.account.get(), this.manifest.load()]);
-    const profile = await unwrap(
-      getProfile(this.http, {
-        membershipType: account.membershipType,
-        destinyMembershipId: account.membershipId,
-        components: COMPONENTS,
-      }),
-    );
+    const [profile, defs] = await Promise.all([this.request(COMPONENTS), this.manifest.load()]);
     const model = buildInventory(profile, defs);
     this.cached = { at: Date.now(), model };
     return model;
+  }
+
+  private async request(components: DestinyComponentType[]): Promise<DestinyProfileResponse> {
+    const account = await this.account.get();
+    return unwrap(
+      getProfile(this.http, {
+        membershipType: account.membershipType,
+        destinyMembershipId: account.membershipId,
+        components,
+      }),
+    );
   }
 }

@@ -3,6 +3,7 @@
 An MCP server for **Destiny 2**. It connects Claude (Claude Code, Claude Desktop, or any MCP client) to your Bungie account so it can:
 
 - **Suggest builds from gear you actually own**: subclass options, exotics, weapons, and an armor optimizer for Armor 3.0 (stats, archetypes, set bonuses, tiers, tuning, masterwork).
+- **Track quests and bounties**: objective progress, quest steps, rewards and expiring bounties.
 - **Manage your vault**: capacity overview, duplicates, dominated armor, community wishlist (god roll / trash) verdicts, cleanup suggestions, and actions to move, equip, lock and pull items.
 
 Game data comes from Bungie's manifest and is read at runtime (stat names, sets, perks, bucket sizes), so the server keeps working as the game changes.
@@ -52,6 +53,12 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 - *"Find me the best Hunter armor with 150+ Weapons and 100 Health using Celestial Nighthawk."*
 - *"How full is my vault? What can I dismantle?"* You can also use the **`clean_vault`** prompt.
 - *"Which of my Fatebringers are god rolls?"*
+- *"What quests do I have going, and which bounties are ready to turn in?"*
+- *"What's Xûr selling, and which of it don't I own?"*
+- *"Which exotic weapons am I missing, and which catalysts am I closest to finishing?"*
+- *"What's this week's featured dungeon and its modifiers?"*
+- *"How did my last raid go? Which weapons did I use the most?"*
+- *"Build me a grenade Warlock, put the stat mods on, and save it as my Raid loadout."*
 - *"Move all my Titan armor from my Hunter to the vault."*
 - *"Lock everything the wishlist marks as a god roll."*
 
@@ -71,10 +78,25 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
 | `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence |
 | `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
+| `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
+| `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
+| `get_item_sockets` | An item's sockets with current plugs, and the unlocked options for one socket |
+| `get_weekly_activities` | What is active now: featured raids/dungeons, Nightfall, Trials and other milestones with modifiers, challenges and rotation dates |
+| `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item |
+| `search_collectibles` | Collections: missing (or owned) weapons, armor, exotics, ornaments and shaders, filterable by rarity, type and source |
+| `search_triumphs` | Triumphs, catalysts and seals with objective progress, closest-to-done first, plus your scores |
+| `get_recent_activities` | Recent activities per character (raids, dungeons, Crucible...) with result, duration and K/D/A |
+| `get_activity_report` | Post-game report for one activity: every player, efficiency and per-weapon kills |
 | `transfer_items` ✎ | Moves items to the vault or a character (via the vault; pulls from postmaster; checks space) |
 | `equip_items` ✎ | Equips items, moving them first; checks class and exotic limits |
 | `set_lock_state` ✎ | Locks or unlocks items |
 | `pull_from_postmaster` ✎ | Pulls gear out of the postmaster |
+| `track_quest` ✎ | Tracks or untracks a quest or bounty (instanced ones only) |
+| `equip_loadout` ✎ | Equips a saved in-game loadout, moving its items over first |
+| `save_loadout` ✎ | Saves what's equipped (optionally equipping given items first) into a loadout slot; replacing one needs `overwrite` |
+| `rename_loadout` ✎ | Renames a loadout to one of the game's preset names |
+| `clear_loadout` ✎ | Deletes a saved loadout (gear is untouched) |
+| `apply_plugs` ✎ | Armor mods, weapon perk switches, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts and mementos |
 
 ✎ = changes your inventory. Every write tool has a `dryRun` option. Bungie's API **cannot dismantle** items, so the cleanup flow is: lock what you keep, then dismantle the unlocked items in game. Equipping requires the character to be in orbit, in a social space, or offline.
 

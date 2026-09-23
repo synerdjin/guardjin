@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BungieApiError, NotAuthenticatedError, createHttpClient } from '../src/bungie/http.js';
+import { actionSpacing, BungieApiError, NotAuthenticatedError, createHttpClient } from '../src/bungie/http.js';
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const success = (payload: unknown) => response({ Response: payload, ErrorCode: 1, ThrottleSeconds: 0, ErrorStatus: 'Success', Message: 'Ok' });
@@ -61,5 +61,19 @@ describe('createHttpClient', () => {
     expect(requests.map((r) => JSON.parse(String(r.init.body)).a)).toEqual([1, 2]);
     expect(sleeps.length).toBe(1);
     expect(sleeps[0]).toBeGreaterThan(0);
+  });
+
+  it('uses the longer documented gap for loadout, tracking and plug actions', async () => {
+    expect(actionSpacing('https://www.bungie.net/Platform/Destiny2/Actions/Loadouts/EquipLoadout/')).toBeGreaterThanOrEqual(1000);
+    expect(actionSpacing('https://www.bungie.net/Platform/Destiny2/Actions/Items/SetTrackedState/')).toBeGreaterThanOrEqual(1000);
+    expect(actionSpacing('https://www.bungie.net/Platform/Destiny2/Actions/Items/InsertSocketPlugFree/')).toBeGreaterThanOrEqual(500);
+    expect(actionSpacing('https://www.bungie.net/Platform/Destiny2/Actions/Items/TransferItem/')).toBeLessThan(500);
+
+    const { http, sleeps } = client([() => success(0), () => success(0)]);
+    const base = 'https://www.bungie.net/Platform/Destiny2/Actions/';
+    // A fast action right after a slow one still waits out the slow one's gap.
+    await http({ method: 'POST', url: `${base}Loadouts/EquipLoadout/`, body: {} });
+    await http({ method: 'POST', url: `${base}Items/TransferItem/`, body: {} });
+    expect(sleeps[0]).toBeGreaterThan(500);
   });
 });

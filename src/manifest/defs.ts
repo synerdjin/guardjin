@@ -1,14 +1,24 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type {
+  DestinyActivityDefinition,
   DestinyClassDefinition,
+  DestinyCollectibleDefinition,
   DestinyDamageTypeDefinition,
+  DestinyDestinationDefinition,
   DestinyEquipableItemSetDefinition,
   DestinyInventoryBucketDefinition,
   DestinyInventoryItemDefinition,
+  DestinyLoadoutConstantsDefinition,
+  DestinyLoadoutNameDefinition,
+  DestinyMilestoneDefinition,
+  DestinyObjectiveDefinition,
   DestinyPlugSetDefinition,
+  DestinyRecordDefinition,
   DestinySandboxPerkDefinition,
   DestinySocketCategoryDefinition,
+  DestinySocketTypeDefinition,
   DestinyStatDefinition,
+  DestinyVendorDefinition,
 } from 'bungie-api-ts/destiny2';
 
 export const INDEX_TABLE = 'guardjin_item_index';
@@ -87,6 +97,38 @@ export class Defs {
   }
   socketCategory(hash: number | undefined) {
     return this.get<DestinySocketCategoryDefinition>('DestinySocketCategoryDefinition', hash);
+  }
+  socketType(hash: number | undefined) {
+    return this.get<DestinySocketTypeDefinition>('DestinySocketTypeDefinition', hash);
+  }
+  objective(hash: number | undefined) {
+    return this.get<DestinyObjectiveDefinition>('DestinyObjectiveDefinition', hash);
+  }
+  activity(hash: number | undefined) {
+    return this.get<DestinyActivityDefinition>('DestinyActivityDefinition', hash);
+  }
+  milestone(hash: number | undefined) {
+    return this.get<DestinyMilestoneDefinition>('DestinyMilestoneDefinition', hash);
+  }
+  vendor(hash: number | undefined) {
+    return this.get<DestinyVendorDefinition>('DestinyVendorDefinition', hash);
+  }
+  collectible(hash: number | undefined) {
+    return this.get<DestinyCollectibleDefinition>('DestinyCollectibleDefinition', hash);
+  }
+  record(hash: number | undefined) {
+    return this.get<DestinyRecordDefinition>('DestinyRecordDefinition', hash);
+  }
+  loadoutName(hash: number | undefined) {
+    return this.get<DestinyLoadoutNameDefinition>('DestinyLoadoutNameDefinition', hash);
+  }
+  /** The single row describing loadout slots and their preset names, icons and colors. */
+  loadoutConstants(): DestinyLoadoutConstantsDefinition | undefined {
+    const row = this.db.prepare('SELECT json FROM DestinyLoadoutConstantsDefinition LIMIT 1').get() as { json: string | Uint8Array } | undefined;
+    return row ? (JSON.parse(typeof row.json === 'string' ? row.json : decoder.decode(row.json)) as DestinyLoadoutConstantsDefinition) : undefined;
+  }
+  destination(hash: number | undefined) {
+    return this.get<DestinyDestinationDefinition>('DestinyDestinationDefinition', hash);
   }
 
   /** Human-readable description for a plug: its own description, else its displayable sandbox perks. */

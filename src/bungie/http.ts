@@ -14,6 +14,17 @@ const THROTTLE_CODES = new Set([31, 35, 36, 37, 51, 54, 55, 56, 57, ErrorCodes.D
 const MAX_ATTEMPTS = 4;
 /** Bungie asks for at least 0.1s between write actions; leave some headroom. */
 const ACTION_SPACING_MS = 150;
+/** Endpoints whose documentation asks for a longer gap. */
+const SLOW_ACTIONS: [RegExp, number][] = [
+  [/\/Actions\/Loadouts\//, 1100],
+  [/\/Actions\/Items\/SetTrackedState\//, 1100],
+  [/\/Actions\/Items\/InsertSocketPlug(Free)?\//, 600],
+];
+
+/** Minimum gap around a write action, in ms. */
+export function actionSpacing(url: string): number {
+  return SLOW_ACTIONS.find(([re]) => re.test(url))?.[1] ?? ACTION_SPACING_MS;
+}
 
 export class BungieApiError extends Error {
   constructor(
@@ -53,6 +64,7 @@ export function createHttpClient(opts: HttpOptions): HttpClient {
   const sleep = opts.sleep ?? defaultSleep;
   let actionChain: Promise<unknown> = Promise.resolve();
   let lastActionAt = 0;
+  let lastSpacing = 0;
 
   async function send<T>(config: HttpClientConfig): Promise<T> {
     const url = new URL(config.url);
@@ -118,13 +130,16 @@ export function createHttpClient(opts: HttpOptions): HttpClient {
 
   return function http<T>(config: HttpClientConfig): Promise<T> {
     if (config.method === 'POST' && config.url.includes('/Destiny2/Actions/')) {
+      const spacing = actionSpacing(config.url);
       const run = actionChain.then(async () => {
-        const wait = lastActionAt + ACTION_SPACING_MS - Date.now();
+        // Honor both this action's gap and the one the previous action asked for.
+        const wait = lastActionAt + Math.max(spacing, lastSpacing) - Date.now();
         if (wait > 0) await sleep(wait);
         try {
           return await send<T>(config);
         } finally {
           lastActionAt = Date.now();
+          lastSpacing = spacing;
         }
       });
       actionChain = run.catch(() => undefined);

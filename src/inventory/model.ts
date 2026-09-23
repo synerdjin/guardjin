@@ -130,9 +130,9 @@ export function locationLabel(loc: ItemLocation, characters: Character[]): strin
   }
 }
 
-/** Turns a raw GetProfile response into a flat, name-resolved inventory. */
-export function buildInventory(profile: DestinyProfileResponse, defs: Defs): InventoryModel {
-  const characters: Character[] = Object.values(profile.characters?.data ?? {})
+/** Characters from a GetProfile response, most recently played first. */
+export function buildCharacters(profile: DestinyProfileResponse, defs: Defs): Character[] {
+  return Object.values(profile.characters?.data ?? {})
     .sort((a, b) => b.dateLastPlayed.localeCompare(a.dateLastPlayed))
     .map((c: DestinyCharacterComponent) => ({
       id: c.characterId,
@@ -142,7 +142,11 @@ export function buildInventory(profile: DestinyProfileResponse, defs: Defs): Inv
       light: c.light,
       lastPlayed: c.dateLastPlayed,
     }));
+}
 
+/** Turns a raw GetProfile response into a flat, name-resolved inventory. */
+export function buildInventory(profile: DestinyProfileResponse, defs: Defs): InventoryModel {
+  const characters = buildCharacters(profile, defs);
   const items: Item[] = [];
   const add = (component: DestinyItemComponent, location: ItemLocation, equipped: boolean) => {
     const item = buildItem(component, location, equipped, profile, defs);

@@ -1,9 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { BungieApiError, NotAuthenticatedError } from '../bungie/http.js';
+import { UserError } from '../errors.js';
 import { ARMOR_BUCKETS, ARMOR_STAT_KEYS, ARMOR_STATS, type ArmorStatKey } from '../inventory/constants.js';
 import { locationLabel, namedStats, statTotal, type Character, type InventoryModel, type Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
+
+export { UserError };
 
 export function ok(data: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data) }] };
@@ -28,8 +31,6 @@ export function safe<A extends unknown[]>(fn: (...args: A) => Promise<CallToolRe
   };
 }
 
-/** An error caused by tool input, shown to the model as-is. */
-export class UserError extends Error {}
 
 export const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
 export const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } as const;
@@ -52,7 +53,7 @@ export function statKeyNames(defs: Defs): Record<ArmorStatKey, string> {
  * Resolves a character reference: an id, a class name ("warlock"), or undefined for the most
  * recently played character.
  */
-export function resolveCharacter(inv: InventoryModel, ref: string | undefined): Character {
+export function resolveCharacter(inv: Pick<InventoryModel, 'characters'>, ref: string | undefined): Character {
   if (!inv.characters.length) throw new UserError('This account has no characters.');
   if (!ref) return inv.characters[0];
   const r = ref.trim().toLowerCase();

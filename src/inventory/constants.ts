@@ -12,6 +12,8 @@ export const Buckets = {
   Legs: 20886954,
   ClassItem: 1585787867,
   Ghost: 4023194814,
+  /** Character pursuits: quests, bounties and quest items. */
+  Quests: 1345459588,
 } as const;
 
 export const ARMOR_BUCKETS = [Buckets.Helmet, Buckets.Gauntlets, Buckets.Chest, Buckets.Legs, Buckets.ClassItem] as const;
@@ -47,9 +49,13 @@ export const ItemStateFlags = {
 export const ItemType = {
   Armor: 2,
   Weapon: 3,
+  Quest: 12,
+  QuestStep: 13,
+  QuestStepComplete: 14,
   Subclass: 16,
   Mod: 19,
   Ghost: 24,
+  Bounty: 26,
 } as const;
 
 /** DestinyClass values. */
