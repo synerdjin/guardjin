@@ -171,7 +171,7 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
     {
       title: 'Subclass options',
       description:
-        'For each subclass on a character: what is equipped and every unlocked super, ability, aspect and fragment, with descriptions and stat bonuses. Use this to reason about builds.',
+        'For each subclass on a character: what is equipped and every unlocked super, ability, aspect and fragment, with descriptions and stat bonuses. Use this to reason about builds; apply_plugs equips the choices.',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name; default is the most recently played'),
         subclass: z.string().optional().describe('Only this subclass (name substring, e.g. "Prismatic", "Stormcaller")'),

@@ -108,7 +108,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `save_loadout` ✎ | Saves what's equipped (optionally equipping given items first) into a loadout slot; replacing one needs `overwrite` |
 | `rename_loadout` ✎ | Renames a loadout to one of the game's preset names |
 | `clear_loadout` ✎ | Deletes a saved loadout (gear is untouched) |
-| `apply_plugs` ✎ | Armor mods, weapon perk switches, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts and mementos |
+| `apply_plugs` ✎ | Equips armor and weapon mods, weapon perk switches, subclass abilities/aspects/fragments, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts and mementos |
 
 **Bungie's data lags writes.** After a change (mod, perk, loadout, equip, quest tracking), Bungie's read endpoints can keep showing the old state for a minute or more (up to about 2.5 minutes in testing), and can flip between old and new meanwhile. Write tools report `confirmed: false` with a note instead of guessing; `apply_plugs` remembers its own recent changes for 5 minutes, and `get_character` / `get_item_details` read live. Loadout equips are also subject to the game's one-exotic-weapon / one-exotic-armor rule, which it enforces silently: `equip_loadout` warns in advance when a loadout's exotic would be skipped.
 

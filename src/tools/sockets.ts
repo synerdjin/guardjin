@@ -87,18 +87,19 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
   server.registerTool(
     'apply_plugs',
     {
-      title: 'Apply mods, perks, shaders and ornaments',
+      title: 'Equip mods, perks, aspects, fragments, shaders and ornaments',
       description:
-        'Inserts plugs into items: armor mods (including +5/+10 stat mods from optimize_armor), switching a weapon perk to another option it rolled, shaders, ornaments and armor tuning. ' +
+        'Equips mods and other socketed options: armor mods (including +5/+10 stat mods from optimize_armor), weapon mods, switching a weapon perk to another option it rolled, ' +
+        'subclass setup (super, grenade, melee, class ability, jump, aspects, fragments; pass the subclass item id), shaders, ornaments and armor tuning. ' +
         'Only free, reversible changes: masterworks, catalysts, mementos and other costly plugs are refused. Checks that the plug fits, is unlocked, and fits in armor energy. ' +
-        'Without `socket`, a plug goes into an empty compatible socket (or the only compatible one). `remove: true` empties a socket. ' +
-        'The character must be in orbit, in a social space, or offline. Changes your real gear; use dryRun first.',
+        'Without `socket`, a plug goes into an empty compatible socket (or the only compatible one). `remove: true` empties a socket. Swapping an aspect can change how many fragment slots are open. ' +
+        'Use get_item_sockets to see sockets and options. The character must be in orbit, in a social space, or offline. Changes your real gear; use dryRun first.',
       inputSchema: {
         changes: z
           .array(
             z.object({
               item: z.string().describe('Item id or unique name'),
-              plug: z.string().optional().describe('Plug name (e.g. "Grenade Mod", "Firefly", "Gloom Shader") or hash; with remove, the plug to take out'),
+              plug: z.string().optional().describe('Plug name (e.g. "Grenade Mod", "Backup Mag", "Firefly", "Echo of Persistence", "Chaos Accelerant") or hash; with remove, the plug to take out'),
               socket: z.number().int().min(0).optional().describe('Socket index from get_item_sockets'),
               remove: z.boolean().optional().describe('Reset the socket to empty'),
             }),
