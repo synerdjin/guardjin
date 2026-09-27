@@ -2,6 +2,7 @@ import type { HttpClient } from 'bungie-api-ts/http';
 import { DestinyComponentType, getItem, getProfile, type DestinyProfileResponse } from 'bungie-api-ts/destiny2';
 import type { AccountService } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
+import type { Defs } from '../manifest/defs.js';
 import type { ManifestLoader } from '../manifest/manifest.js';
 import { buildInventory, buildItem, type InventoryModel, type Item } from './model.js';
 
@@ -29,6 +30,7 @@ const COMPONENTS = [
   DestinyComponentType.ItemStats,
   DestinyComponentType.ItemSockets, // also returns profile/character plug sets
   DestinyComponentType.ItemReusablePlugs,
+  DestinyComponentType.ProfileCurrencies, // small; lets snapshots and briefs track currencies
 ];
 
 /** Enough to read quests and bounties with their objective progress. */
@@ -39,6 +41,8 @@ export class ProfileService {
   private cached: { at: number; model: InventoryModel } | undefined;
   private inflight: Promise<InventoryModel> | undefined;
   private readonly recentWrites = new Map<string, RecentWrites>();
+  /** Called after every fresh inventory read (used to record local history). Errors are logged, not thrown. */
+  onFetch?: (model: InventoryModel, defs: Defs) => void;
 
   constructor(
     private readonly http: HttpClient,
@@ -141,6 +145,11 @@ export class ProfileService {
     const [profile, defs] = await Promise.all([this.request(COMPONENTS), this.manifest.load()]);
     const model = buildInventory(profile, defs);
     this.cached = { at: Date.now(), model };
+    try {
+      this.onFetch?.(model, defs);
+    } catch (err) {
+      console.error('[guardjin] recording inventory history failed:', (err as Error).message);
+    }
     return model;
   }
 

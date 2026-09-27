@@ -12,6 +12,7 @@ import { registerLoadoutTools } from './tools/loadouts.js';
 import { registerProgressTools } from './tools/progress.js';
 import { registerQuestTools } from './tools/quests.js';
 import { registerSocketTools } from './tools/sockets.js';
+import { registerTrackingTools } from './tools/tracking.js';
 import { registerVaultTools } from './tools/vault.js';
 import { registerWorldTools } from './tools/world.js';
 
@@ -20,6 +21,7 @@ const INSTRUCTIONS = `guardjin connects to the user's Destiny 2 account through 
 - Armor uses Armor 3.0 stats (Weapons, Health, Class, Grenade, Super, Melee; 0-200 each).
 - For builds, gather context (get_equipped_loadout, get_subclass_options, get_artifact, exotics via search_inventory) before running optimize_armor, and only recommend gear the user owns unless asked otherwise. Use champion_coverage for Barrier/Overload/Unstoppable questions: champion types come from hidden weapon traits that item text doesn't show.
 - get_quests lists quests and bounties with objective progress; use it for "what should I work on" or "which bounties are done". get_weekly_activities and get_vendor cover what is available this week; search_collectibles and search_triumphs cover what is missing or closest to done; get_recent_activities, get_activity_report, get_career_stats, get_activity_clears and get_weapon_stats cover past performance; get_progression, get_currencies and get_craftables cover account progress. Bungie's data can lag a write by a minute or more: get_character and get_item_details read live, and get_current_activity says whether gear changes are likely to be accepted.
+- guardjin keeps a local history of the inventory (Bungie has no acquisition dates): whats_new answers "what dropped since …" and triage_drops applies the user's keep rules to unlocked gear.
 - Write tools (transfer_items, equip_items, set_lock_state, pull_from_postmaster, track_quest, equip_loadout, save_loadout, rename_loadout, clear_loadout, apply_plugs) change the real account: confirm with the user first, and run dryRun before larger changes. save_loadout with overwrite and clear_loadout cannot be undone.
 - To equip or swap mods, weapon perks, aspects, fragments, abilities or artifact perks, use apply_plugs (get_item_sockets and get_artifact show the options). equip_items handles exotic swaps itself.
 - To save an optimize_armor result: equip the pieces (save_loadout items, or equip_items), apply its stat mods with apply_plugs, then save_loadout. The API cannot dismantle items.
@@ -40,6 +42,7 @@ async function main(): Promise<void> {
   registerHistoryTools(server, ctx);
   registerSocketTools(server, ctx);
   registerQuestTools(server, ctx);
+  registerTrackingTools(server, ctx);
   registerPrompts(server);
 
   await server.connect(new StdioServerTransport());

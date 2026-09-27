@@ -83,6 +83,8 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
 | `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence (higher-tier copies are kept first) |
 | `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
+| `whats_new` | New drops, dismantled items, lock/masterwork/tier/power, character power and currency changes since a date, from local history; `afterItem` / `newest` for older drops |
+| `triage_drops` | Applies your keep rules (`~/.guardjin/keep-rules.json`) to unlocked gear: keep (with ids to lock), dismantle, or review, with the rule behind each |
 | `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
 | `get_item_sockets` | An item's sockets with current plugs and their progress, and the options for one socket with unlock progress and why blocked ones can't be inserted |
@@ -122,7 +124,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | --- | --- | --- |
 | `BUNGIE_API_KEY` | (required) | API key from your Bungie app |
 | `BUNGIE_CLIENT_ID` / `BUNGIE_CLIENT_SECRET` | (required) | OAuth client credentials |
-| `GUARDJIN_HOME` | `~/.guardjin` | Tokens, manifest and wishlist cache |
+| `GUARDJIN_HOME` | `~/.guardjin` | Tokens, manifest, wishlist and community data caches, local history (`guardjin.db`) and keep rules |
 | `GUARDJIN_LANGUAGE` | `en` | Manifest language (`de`, `fr`, `es`, `ja`, ...) |
 | `GUARDJIN_REDIRECT_PORT` | `7777` | Must match the redirect URL registered with Bungie |
 | `GUARDJIN_WISHLIST_URL` | voltron.txt | Any DIM-format wishlist URL |
@@ -139,7 +141,10 @@ src/
   manifest/            downloads the world SQLite DB per game version; name index; typed definition lookups
   inventory/           GetProfile → normalized items (Armor 3.0 stat math, weapon perk columns), subclasses
   builds/optimizer.ts  armor search: Pareto pruning + branch-and-bound over 5 slots, stat-mod assignment
-  vault/               analysis (capacity, duplicates, dominance, cleanup), wishlist parser/matcher, transfer/equip/lock
+  builds/champions.ts  champion coverage: breaker types, hidden frame traits, "Strong against" text, stun verbs
+  vault/               analysis (capacity, duplicates, dominance, cleanup), keep-rule triage, wishlist parser/matcher, transfer/equip/lock
+  store/snapshots.ts   local history in ~/.guardjin/guardjin.db: first/last seen per item, periodic full snapshots
+  community/data.ts    cached DIM community data (extra champion types, drop sources)
   tools/               MCP tool definitions, one file per group
   prompts/             suggest_build and clean_vault workflow prompts
 ```
