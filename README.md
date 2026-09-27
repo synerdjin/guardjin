@@ -72,6 +72,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 
 | Tool | What it does |
 | --- | --- |
+| `session_brief` | One-call start of a session: characters, the main character's gear/artifact/stats, key currencies, vault and postmaster, this week's activities, Xûr and wanted-item hits, changes since the last brief |
 | `auth_status` | Config and login status, linked Destiny account |
 | `list_characters` | Characters with class, power, subclass and stat totals |
 | `search_inventory` | Filters gear by name, slot, class, rarity, location, perk, element, min stats and tier |
@@ -79,6 +80,9 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `get_equipped_loadout` | A character's equipped gear, subclass setup, artifact perks, stats and active set bonuses |
 | `get_artifact` | A character's artifacts, the equipped one's active perks, and every perk option by tier |
 | `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
+| `find_source` | Where an item comes from, whether you own/collected it, pattern status, and whether any vendor (Xûr included) sells it now |
+| `wanted_items` | A watch list of items you're hunting; `check` looks for them in every vendor's current stock |
+| `query_manifest` | One read-only SQL SELECT against the game database, with your inventory as `temp.owned_items` |
 | `lookup_definition` | Searches game data (exotics, perks, mods, aspects, fragments, set bonuses), including items you don't own |
 | `optimize_armor` | Best 5-piece armor combinations for stat minimums and priorities, a required exotic, set bonuses, and stat mods |
 | `export_build` / `audit_build` | Save the equipped setup as a JSON build spec; check a character against a spec and get the equip/plug changes that close the gaps |

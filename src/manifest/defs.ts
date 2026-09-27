@@ -58,7 +58,15 @@ export class Defs {
   constructor(
     readonly db: DatabaseSync,
     readonly version: string,
-  ) {}
+  ) {
+    // SQL helpers for query_manifest: json fields hold unsigned hashes, table ids are signed.
+    try {
+      db.function('sid', { deterministic: true }, (h) => (typeof h === 'number' || typeof h === 'bigint' ? Number(h) | 0 : null));
+      db.function('uid', { deterministic: true }, (h) => (typeof h === 'number' || typeof h === 'bigint' ? Number(h) >>> 0 : null));
+    } catch {
+      // older Node without database.function(); plain SQL still works
+    }
+  }
 
   get<T>(table: string, hash: number | undefined): T | undefined {
     if (hash === undefined || hash === null) return undefined;

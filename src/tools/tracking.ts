@@ -23,7 +23,7 @@ function requireStore(ctx: Context): SnapshotStore {
 }
 
 /** What changed between a snapshot and now: lock, masterwork, tier and power changes; character power; currencies. */
-function diffAgainstSnapshot(store: SnapshotStore, snapshotId: number, inv: InventoryModel, currencies: { name: string; quantity: number }[]) {
+export function diffAgainstSnapshot(store: SnapshotStore, snapshotId: number, inv: InventoryModel, currencies: { name: string; quantity: number }[]) {
   const before = store.snapshotItems(snapshotId);
   const changed: { name: string; id: string; changes: string[] }[] = [];
   for (const i of inv.items) {
