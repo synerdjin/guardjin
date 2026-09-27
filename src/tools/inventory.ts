@@ -6,6 +6,7 @@ import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../in
 import { locationLabel, namedStats, statTotal, type Item } from '../inventory/model.js';
 import { describeSubclass } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
+import { CHAMPION_NAMES, itemChampions, loadOverrides } from '../builds/champions.js';
 import { artifactOptions, characterArtifacts, describeArtifact } from '../progress/artifact.js';
 import { READ_ONLY, UserError, briefItem, ok, paginate, resolveCharacter, resolveItem, safe, statMapSchema } from './util.js';
 
@@ -117,7 +118,7 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
     {
       title: 'Item details',
       description:
-        'Full details for one item: every perk/trait with its description and selectable options, mods, masterwork, stats (live, without mods, and fully masterworked for armor), armor set bonuses and exotic perk text.',
+        'Full details for one item: every perk/trait with its description and selectable options, mods, masterwork, stats (live, without mods, and fully masterworked for armor), armor set bonuses, exotic perk text, and which champion type it stuns.',
       inputSchema: {
         item: z.string().describe('Item id (preferred) or a unique item name'),
         live: z.boolean().optional().describe('Read this item fresh from Bungie instead of the cached profile (default true; the profile can lag recent changes by a minute or more)'),
@@ -129,7 +130,12 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
       const defs = await ctx.manifest.load();
       const item = resolveItem(inv, ref);
       if (live !== false) await ctx.profile.refreshItem(inv, item);
-      return ok(itemDetails(item, defs, locationLabel(item.location, inv.characters)));
+      const extras = { extendedBreaker: await ctx.community.get<Record<string, number>>('extendedBreaker'), overrides: loadOverrides() };
+      const champions = item.kind === 'weapon' || item.isExotic ? itemChampions(inv, defs, item, extras) : [];
+      return ok({
+        ...itemDetails(item, defs, locationLabel(item.location, inv.characters)),
+        antiChampion: champions.length ? champions.map((c) => `${CHAMPION_NAMES[c.champion]} (${c.via})`) : undefined,
+      });
     }),
   );
 

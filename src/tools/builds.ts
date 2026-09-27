@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { optimizeArmor, type ArmorCandidate } from '../builds/optimizer.js';
+import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampionWeapons } from '../builds/champions.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, STAT_CAP } from '../inventory/constants.js';
 import { locationLabel, namedStats, type Item } from '../inventory/model.js';
 import { describeSubclass, subclassStatBonus } from '../inventory/subclass.js';
 import { activeSetBonuses } from './inventory.js';
-import { READ_ONLY, UserError, ok, resolveCharacter, safe, slotIndex, statKeyNames, statMapSchema, statMapToVector } from './util.js';
+import { READ_ONLY, UserError, briefItem, ok, resolveCharacter, resolveItems, safe, slotIndex, statKeyNames, statMapSchema, statMapToVector } from './util.js';
 
 export function registerBuildTools(server: McpServer, ctx: Context): void {
   server.registerTool(
@@ -137,6 +138,51 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
             setBonuses: activeSetBonuses(setCounts, defs).filter((s) => s.bonuses.some((b) => b.active)),
           };
         }),
+      });
+    }),
+  );
+
+  server.registerTool(
+    'champion_coverage',
+    {
+      title: 'Champion coverage',
+      description:
+        'Which champion types (Barrier, Overload, Unstoppable) a character can handle, and how: weapon frames and perks (the game\'s hidden champion traits, which item text does not show), exotic weapons and armor, ' +
+        'the equipped artifact\'s perks, and subclass abilities, aspects and fragments whose stun verbs match the game\'s rules (suppress/slow/jolt = Overload, radiant/volatile/unraveling = Barrier, blind/suspend/shatter/ignition = Unstoppable). ' +
+        'high confidence = marked by the game; medium = inferred from ability text. With scope "owned", it also lists owned weapons that fill each gap.',
+      inputSchema: {
+        character: z.string().optional().describe('Character id or class name; default is the most recently played'),
+        items: z.array(z.string()).max(10).optional().describe('Check these weapons/exotic armor (ids or names) instead of what is equipped'),
+        scope: z.enum(['equipped', 'owned']).optional().describe('owned: also suggest owned weapons for each missing champion type (default equipped)'),
+        includeSubclass: z.boolean().optional().describe('Count the equipped subclass and artifact (default true)'),
+      },
+      annotations: READ_ONLY,
+    },
+    safe(async ({ character, items, scope, includeSubclass }) => {
+      const inv = await ctx.profile.inventory();
+      const defs = await ctx.manifest.load();
+      const c = resolveCharacter(inv, character);
+      const extras = { extendedBreaker: await ctx.community.get<Record<string, number>>('extendedBreaker'), overrides: loadOverrides() };
+      const checked = items?.length
+        ? resolveItems(inv, items)
+        : inv.items.filter((i) => i.equipped && i.location.type === 'character' && i.location.characterId === c.id && (i.kind === 'weapon' || i.kind === 'armor'));
+      const report = championCoverage(inv, defs, { items: checked, character: includeSubclass === false ? undefined : c, extras });
+      const suggestions =
+        scope === 'owned'
+          ? Object.fromEntries(
+              (report.gaps.length ? report.gaps : CHAMPIONS).map((champ) => [
+                CHAMPION_NAMES[champ],
+                ownedChampionWeapons(inv, defs, c, champ, extras).map(({ item, via }) => ({ ...briefItem(item, inv, defs), via: via!.via })),
+              ]),
+            )
+          : undefined;
+      return ok({
+        character: c.className,
+        checked: checked.filter((i) => i.kind === 'weapon' || i.isExotic).map((i) => i.name),
+        champions: Object.fromEntries(CHAMPIONS.map((k) => [CHAMPION_NAMES[k], report.champions[k]])),
+        gaps: report.gaps.map((g) => CHAMPION_NAMES[g]),
+        ownedOptions: suggestions,
+        communityData: extras.extendedBreaker ? undefined : 'DIM extended-breaker data unavailable; a few exotics may be missing',
       });
     }),
   );

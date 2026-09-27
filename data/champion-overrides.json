@@ -1,0 +1,5 @@
+{
+  "_comment": "Hand-maintained corrections for champion coverage, applied after the manifest and community data. Keys are item hashes (weapons or exotic armor); values are barrier, overload, unstoppable, or none. Add a note with the source and date.",
+  "items": {},
+  "notes": {}
+}

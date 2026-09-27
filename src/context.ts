@@ -1,6 +1,7 @@
 import type { HttpClient } from 'bungie-api-ts/http';
 import { AccountService } from './bungie/account.js';
 import { AuthManager } from './bungie/auth.js';
+import { CommunityDataService } from './community/data.js';
 import { createHttpClient } from './bungie/http.js';
 import { loadConfig, type Config } from './config.js';
 import { ProfileService } from './inventory/profile.js';
@@ -16,6 +17,7 @@ export interface Context {
   manifest: ManifestLoader;
   profile: ProfileService;
   wishlist: WishlistService;
+  community: CommunityDataService;
 }
 
 export function createContext(config: Config = loadConfig()): Context {
@@ -25,5 +27,6 @@ export function createContext(config: Config = loadConfig()): Context {
   const manifest = new ManifestLoader(config, http);
   const profile = new ProfileService(http, account, manifest);
   const wishlist = new WishlistService(config);
-  return { config, http, auth, account, manifest, profile, wishlist };
+  const community = new CommunityDataService(config);
+  return { config, http, auth, account, manifest, profile, wishlist, community };
 }

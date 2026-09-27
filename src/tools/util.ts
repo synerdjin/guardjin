@@ -5,6 +5,7 @@ import { UserError } from '../errors.js';
 import { ARMOR_BUCKETS, ARMOR_STAT_KEYS, ARMOR_STATS, type ArmorStatKey } from '../inventory/constants.js';
 import { locationLabel, namedStats, statTotal, type Character, type InventoryModel, type Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
+import { weaponChampion } from '../builds/champions.js';
 
 export { UserError };
 
@@ -108,6 +109,8 @@ export function briefItem(item: Item, inv: InventoryModel, defs: Defs, opts: { m
     if (item.weapon.element) out.element = item.weapon.element;
     if (item.weapon.ammo) out.ammo = item.weapon.ammo;
     if (item.weapon.intrinsic) out.frame = item.weapon.intrinsic.name;
+    const champion = weaponChampion(inv, defs, item);
+    if (champion) out.antiChampion = champion;
     out.perks = item.weapon.perks.map((c) =>
       c.options.length > 1 ? `${c.equipped.name} (options: ${c.options.map((o) => o.name).join(', ')})` : c.equipped.name,
     );

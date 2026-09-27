@@ -72,14 +72,16 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `auth_status` | Config and login status, linked Destiny account |
 | `list_characters` | Characters with class, power, subclass and stat totals |
 | `search_inventory` | Filters gear by name, slot, class, rarity, location, perk, element, min stats and tier |
-| `get_item_details` | Perks with descriptions and options, mods, masterwork, rolled/no-mod/masterworked stats, set bonus |
-| `get_equipped_loadout` | A character's equipped gear, subclass setup, stats and active set bonuses |
+| `get_item_details` | Perks with descriptions and options, mods, masterwork, rolled/no-mod/masterworked stats, set bonus, champion type |
+| `get_equipped_loadout` | A character's equipped gear, subclass setup, artifact perks, stats and active set bonuses |
+| `get_artifact` | A character's artifacts, the equipped one's active perks, and every perk option by tier |
 | `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
 | `lookup_definition` | Searches game data (exotics, perks, mods, aspects, fragments, set bonuses), including items you don't own |
 | `optimize_armor` | Best 5-piece armor combinations for stat minimums and priorities, a required exotic, set bonuses, and stat mods |
+| `champion_coverage` | Which champion types the equipped (or given) gear, subclass and artifact handle, with owned weapons that fill gaps |
 | `vault_summary` | Vault use vs capacity, full character buckets, postmaster counts |
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
-| `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence |
+| `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence (higher-tier copies are kept first) |
 | `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
 | `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
@@ -88,7 +90,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item; `public` shows the character-independent stock |
 | `search_collectibles` | Collections: missing (or owned) weapons, armor, exotics, ornaments and shaders, filterable by rarity, type and source |
 | `search_triumphs` | Triumphs, catalysts and seals with objective progress, closest-to-done first, plus your scores |
-| `get_progression` | Season and season pass rank, Guardian Rank, artifact bonus, faction ranks, and weekly/daily milestone progress |
+| `get_progression` | Season and season pass rank, Guardian Rank, equipped artifact, faction ranks, and weekly/daily milestone progress |
 | `get_currencies` | Glimmer, shards, Bright Dust, Silver and other currencies, plus materials |
 | `get_craftables` | Weapon patterns: which you can craft and why others are locked |
 | `get_current_activity` | Where a character is (orbit, activity, offline), fireteam, and whether gear changes will likely be accepted |
@@ -100,7 +102,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `get_recent_activities` | Recent activities per character (raids, dungeons, Crucible...) with result, duration and K/D/A |
 | `get_activity_report` | Post-game report for one activity: every player, efficiency and per-weapon kills |
 | `transfer_items` ✎ | Moves items to the vault or a character (via the vault; pulls from postmaster; checks space) |
-| `equip_items` ✎ | Equips items, moving them first; checks class and exotic limits |
+| `equip_items` ✎ | Equips items (and artifacts), moving them first; checks class and exotic limits and swaps in a legendary when a new exotic would clash |
 | `set_lock_state` ✎ | Locks or unlocks items |
 | `pull_from_postmaster` ✎ | Pulls gear out of the postmaster |
 | `track_quest` ✎ | Tracks or untracks a quest or bounty (instanced ones only) |
@@ -108,7 +110,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `save_loadout` ✎ | Saves what's equipped (optionally equipping given items first) into a loadout slot; replacing one needs `overwrite` |
 | `rename_loadout` ✎ | Renames a loadout to one of the game's preset names |
 | `clear_loadout` ✎ | Deletes a saved loadout (gear is untouched) |
-| `apply_plugs` ✎ | Equips armor and weapon mods, weapon perk switches, subclass abilities/aspects/fragments, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts and mementos |
+| `apply_plugs` ✎ | Equips armor and weapon mods, weapon perk switches, subclass abilities/aspects/fragments, artifact perks, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts, mementos and artifact resets |
 
 **Bungie's data lags writes.** After a change (mod, perk, loadout, equip, quest tracking), Bungie's read endpoints can keep showing the old state for a minute or more (up to about 2.5 minutes in testing), and can flip between old and new meanwhile. Write tools report `confirmed: false` with a note instead of guessing; `apply_plugs` remembers its own recent changes for 5 minutes, and `get_character` / `get_item_details` read live. Loadout equips are also subject to the game's one-exotic-weapon / one-exotic-armor rule, which it enforces silently: `equip_loadout` warns in advance when a loadout's exotic would be skipped.
 
