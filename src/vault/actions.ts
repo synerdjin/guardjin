@@ -246,8 +246,8 @@ export function planEquip(
   const valid: Item[] = [];
   for (const it of items) {
     const itemId = it.instanceId ?? String(it.hash);
-    if (it.kind !== 'weapon' && it.kind !== 'armor' && it.kind !== 'subclass' && it.kind !== 'ghost') {
-      errors.push({ item: it, itemId, error: `${it.name}: only weapons, armor, subclasses and ghosts can be equipped here` });
+    if (it.kind !== 'weapon' && it.kind !== 'armor' && it.kind !== 'subclass' && it.kind !== 'ghost' && it.bucketHash !== Buckets.Artifact) {
+      errors.push({ item: it, itemId, error: `${it.name}: only weapons, armor, subclasses, ghosts and artifacts can be equipped here` });
     } else if (it.classType !== 'any' && it.classType !== character.classType) {
       errors.push({ item: it, itemId, error: `${it.name} is ${it.classType} gear and can't be equipped on a ${character.classType}` });
     } else if (it.equipped && it.location.type === 'character' && it.location.characterId !== characterId) {

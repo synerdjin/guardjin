@@ -304,6 +304,10 @@ export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugR
     }
 
     const newDef = defs.item(plugHash);
+    if (/^reset\b/i.test(newDef?.displayProperties.name ?? '')) {
+      fail('resetting is not done by this tool; do it in game');
+      continue;
+    }
     let energy: PlugChange['energy'];
     if (state.energy) {
       const used = state.energy.used - energyCost(defs.item(socket.current?.hash)) + energyCost(newDef);

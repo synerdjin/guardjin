@@ -6,6 +6,7 @@ import { Rarity } from '../inventory/constants.js';
 import { buildCharacters } from '../inventory/model.js';
 import { buildCraftables } from '../progress/craftables.js';
 import { buildWallet } from '../progress/currencies.js';
+import { characterArtifacts, describeArtifact } from '../progress/artifact.js';
 import { buildProgression } from '../progress/progression.js';
 import { buildCommendations, buildKiosks, buildReceipts } from '../progress/social.js';
 import {
@@ -26,7 +27,7 @@ export function registerProgressTools(server: McpServer, ctx: Context): void {
     {
       title: 'Progression',
       description:
-        'Your season and season pass rank, Guardian Rank, artifact power bonus, faction and vendor ranks (with weekly progress), and milestone progress (weekly and daily activities with objectives). ' +
+        'Your season and season pass rank, Guardian Rank, the equipped artifact with its active perks (get_artifact lists the options), faction and vendor ranks (with weekly progress), and milestone progress (weekly and daily activities with objectives). ' +
         'Use it to answer "what do I still need to do this week" and "how close am I to the next rank".',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name. Default: most recently played'),
@@ -42,12 +43,16 @@ export function registerProgressTools(server: McpServer, ctx: Context): void {
       ]);
       const c = resolveCharacter({ characters: buildCharacters(profile, defs) }, character);
       const summary = buildProgression(profile, defs, c.id);
+      const inv = await ctx.profile.inventory();
+      const equippedArtifact = characterArtifacts(inv, c.id).find((a) => a.equipped);
       const q = query?.trim().toLowerCase();
       const match = (name: string) => !q || name.toLowerCase().includes(q);
       const show = milestones ?? 'incomplete';
       return ok({
         character: c.className,
         ...summary,
+        artifact: summary.artifact ? { powerBonus: summary.artifact.powerBonus } : undefined,
+        equippedArtifact: equippedArtifact ? describeArtifact(inv, defs, equippedArtifact) : undefined,
         factions: summary.factions.filter((f) => match(f.name)),
         milestones: show === 'none' ? undefined : summary.milestones.filter((m) => match(m.name) && (show === 'all' || !m.completed)),
       });

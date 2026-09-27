@@ -17,6 +17,8 @@ export const Buckets = {
   Consumables: 1469714392,
   Materials: 3865314626,
   Modifications: 3313201758,
+  /** Artifacts: one is equipped; its sockets hold the active artifact perks. */
+  Artifact: 1506418338,
 } as const;
 
 export const ARMOR_BUCKETS = [Buckets.Helmet, Buckets.Gauntlets, Buckets.Chest, Buckets.Legs, Buckets.ClassItem] as const;

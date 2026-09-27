@@ -6,6 +6,7 @@ import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../in
 import { locationLabel, namedStats, statTotal, type Item } from '../inventory/model.js';
 import { describeSubclass } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
+import { artifactOptions, characterArtifacts, describeArtifact } from '../progress/artifact.js';
 import { READ_ONLY, UserError, briefItem, ok, paginate, resolveCharacter, resolveItem, safe, statMapSchema } from './util.js';
 
 const SLOT_ALIASES: Record<string, number> = {
@@ -137,7 +138,7 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
     {
       title: 'Equipped loadout',
       description:
-        "A character's equipped weapons and armor, the subclass setup (super, abilities, aspects, fragments), and the character's current stat totals.",
+        "A character's equipped weapons and armor, the subclass setup (super, abilities, aspects, fragments), the equipped artifact and its active perks, and the character's current stat totals.",
       inputSchema: { character: z.string().optional().describe('Character id or class name; default is the most recently played') },
       annotations: READ_ONLY,
     },
@@ -147,6 +148,7 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
       const c = resolveCharacter(inv, character);
       const equipped = inv.items.filter((i) => i.equipped && i.location.type === 'character' && i.location.characterId === c.id);
       const subclass = equipped.find((i) => i.kind === 'subclass');
+      const artifact = equipped.find((i) => i.bucketHash === Buckets.Artifact);
       const stats: Record<string, number> = {};
       for (const [hash, value] of Object.entries(inv.raw.characters?.data?.[c.id]?.stats ?? {})) {
         const name = defs.stat(Number(hash))?.displayProperties.name;
@@ -162,6 +164,37 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
         weapons: equipped.filter((i) => i.kind === 'weapon').map((i) => briefItem(i, inv, defs)),
         armor: armor.map((i) => ({ ...briefItem(i, inv, defs), mods: i.armor?.mods.map((m) => m.name) })),
         activeSetBonuses: activeSetBonuses(setCounts, defs),
+        artifact: artifact ? describeArtifact(inv, defs, artifact) : undefined,
+      });
+    }),
+  );
+
+  server.registerTool(
+    'get_artifact',
+    {
+      title: 'Artifact perks',
+      description:
+        'The artifacts on a character, which one is equipped, its active perks, and every perk it can take (tier 1–3, with descriptions). ' +
+        'To change perks use apply_plugs on the artifact id (e.g. {item: <artifact id>, plug: "Void Renewal"}); to switch artifacts use equip_items. Resetting the artifact is done in game.',
+      inputSchema: {
+        character: z.string().optional().describe('Character id or class name; default is the most recently played'),
+        artifact: z.string().optional().describe('Artifact name (substring); default is the equipped one'),
+      },
+      annotations: READ_ONLY,
+    },
+    safe(async ({ character, artifact: name }) => {
+      const inv = await ctx.profile.inventory();
+      const defs = await ctx.manifest.load();
+      const c = resolveCharacter(inv, character);
+      const all = characterArtifacts(inv, c.id);
+      if (!all.length) throw new UserError(`Your ${c.className} has no artifacts.`);
+      const q = name?.trim().toLowerCase();
+      const pick = q ? all.find((a) => a.name.toLowerCase().includes(q)) : all[0];
+      if (!pick) throw new UserError(`No artifact matches "${name}". Artifacts: ${all.map((a) => a.name).join(', ')}`);
+      return ok({
+        character: c.className,
+        artifacts: all.map((a) => ({ id: a.instanceId, name: a.name, equipped: a.equipped || undefined })),
+        selected: artifactOptions(inv, defs, pick),
       });
     }),
   );
