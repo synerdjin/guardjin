@@ -57,6 +57,9 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 - *"What's Xûr selling, and which of it don't I own?"*
 - *"Which exotic weapons am I missing, and which catalysts am I closest to finishing?"*
 - *"What's this week's featured dungeon and its modifiers?"*
+- *"Am I ready for this week's Master Nightfall on my Warlock?"* (`plan_activity`)
+- *"Which champions does my current loadout handle?"* (`champion_coverage`)
+- *"What dropped since Tuesday, and what should I lock?"* (`whats_new`, `triage_drops`)
 - *"How did my last raid go? Which weapons did I use the most?"*
 - *"How many Vault of Glass clears do I have, and what's my fastest?"*
 - *"What season pass level am I, and what weekly milestones are left?"*
@@ -90,6 +93,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
 | `get_item_sockets` | An item's sockets with current plugs and their progress, and the options for one socket with unlock progress and why blocked ones can't be inserted |
 | `get_weekly_activities` | What is active now: featured raids/dungeons, Nightfall, Trials and other milestones with modifiers, challenges and rotation dates |
+| `plan_activity` | Reads an activity's current modifiers (champions, shields, surges, threats, locks, power) and checks a character against them, with owned gear that fills the gaps |
 | `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item; `public` shows the character-independent stock |
 | `search_collectibles` | Collections: missing (or owned) weapons, armor, exotics, ornaments and shaders, filterable by rarity, type and source |
 | `search_triumphs` | Triumphs, catalysts and seals with objective progress, closest-to-done first, plus your scores |
