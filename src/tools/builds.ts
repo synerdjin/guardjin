@@ -1,7 +1,11 @@
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { optimizeArmor, type ArmorCandidate } from '../builds/optimizer.js';
 import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampionWeapons } from '../builds/champions.js';
+import { auditBuild, BuildSpecSchema, exportBuild } from '../builds/spec.js';
+import { expandHome } from '../config.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, STAT_CAP } from '../inventory/constants.js';
 import { locationLabel, namedStats, type Item } from '../inventory/model.js';
@@ -186,6 +190,85 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
       });
     }),
   );
+
+  server.registerTool(
+    'export_build',
+    {
+      title: 'Export build',
+      description:
+        'Saves what a character has equipped as a build spec (JSON): subclass super/abilities/aspects/fragments, exotic and armor pieces, set bonuses, current stats as targets, armor mods per slot, ' +
+        'weapons with selected perks and mods, artifact perks, and covered champion types. Edit the file to turn it into a target, then check progress with audit_build.',
+      inputSchema: {
+        name: z.string().describe('Build name, e.g. "Nezarec\'s Sin gunplay"'),
+        character: z.string().optional().describe('Character id or class name; default is the most recently played'),
+        path: z.string().optional().describe(`File to write (absolute, or relative to the builds folder). Default: <builds folder>/<name>.json`),
+        overwrite: z.boolean().optional().describe('Replace an existing file'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    safe(async ({ name, character, path, overwrite }) => {
+      const inv = await ctx.profile.inventory(true);
+      const defs = await ctx.manifest.load();
+      const c = resolveCharacter(inv, character);
+      const extras = { extendedBreaker: await ctx.community.get<Record<string, number>>('extendedBreaker'), overrides: loadOverrides() };
+      const spec = exportBuild(inv, defs, c, name, extras);
+      const file = specPath(ctx.config.buildsDir, path ?? `${slugify(name)}.json`);
+      if (existsSync(file) && !overwrite) throw new UserError(`${file} already exists; pass overwrite: true to replace it.`);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, `${JSON.stringify(spec, null, 2)}\n`);
+      return ok({ file, spec });
+    }),
+  );
+
+  server.registerTool(
+    'audit_build',
+    {
+      title: 'Audit build',
+      description:
+        'Checks a character against a build spec (from export_build or hand-written): subclass pieces, exotic, armor pieces and set bonuses, stat targets, armor and weapon mods, selected weapon perks, masterworks, ' +
+        'power-10 legacy weapons, artifact and artifact perks, and champion coverage. Returns the differences plus ready-made equip_items ids and apply_plugs changes (nothing is changed; confirm with the user and dry-run first).',
+      inputSchema: {
+        spec: z.string().describe('Spec file (absolute path, or a name/file in the builds folder)'),
+        character: z.string().optional().describe('Character id or class name; default is the spec\'s class, else the most recently played'),
+      },
+      annotations: READ_ONLY,
+    },
+    safe(async ({ spec: ref, character }) => {
+      const file = findSpec(ctx.config.buildsDir, ref);
+      const parsed = BuildSpecSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')));
+      if (!parsed.success) throw new UserError(`${file} is not a valid build spec: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      const spec = parsed.data;
+      const inv = await ctx.profile.inventory(true);
+      const defs = await ctx.manifest.load();
+      const c = resolveCharacter(inv, character ?? spec.class);
+      const extras = { extendedBreaker: await ctx.community.get<Record<string, number>>('extendedBreaker'), overrides: loadOverrides() };
+      return ok({ file, build: spec.name, character: c.className, ...auditBuild(inv, defs, c, spec, extras) });
+    }),
+  );
+}
+
+const slugify = (name: string) => name.toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'build';
+
+function specPath(buildsDir: string, ref: string): string {
+  const p = expandHome(ref)!;
+  return isAbsolute(p) ? p : join(buildsDir, p);
+}
+
+/** A spec by path, file name, or the `name` inside it. */
+function findSpec(buildsDir: string, ref: string): string {
+  const direct = specPath(buildsDir, ref);
+  for (const candidate of [direct, `${direct}.json`, join(buildsDir, `${slugify(ref)}.json`)]) if (existsSync(candidate)) return candidate;
+  if (existsSync(buildsDir)) {
+    for (const f of readdirSync(buildsDir).filter((f) => f.endsWith('.json'))) {
+      try {
+        const spec = JSON.parse(readFileSync(join(buildsDir, f), 'utf8')) as { name?: string };
+        if (spec.name && spec.name.toLowerCase() === ref.toLowerCase()) return join(buildsDir, f);
+      } catch {
+        // not a spec
+      }
+    }
+  }
+  throw new UserError(`No build spec "${ref}" (looked in ${buildsDir}). Create one with export_build.`);
 }
 
 function pieceSummary(p: Item, characters: Parameters<typeof locationLabel>[1]) {

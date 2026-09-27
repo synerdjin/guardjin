@@ -18,6 +18,8 @@ export interface Config {
   language: string;
   redirectPort: number;
   wishlistUrl: string;
+  /** Where build specs (JSON) are read and written by name. */
+  buildsDir: string;
 }
 
 let loadedEnv = false;
@@ -51,7 +53,14 @@ export function loadConfig(): Config {
     language: env.GUARDJIN_LANGUAGE || 'en',
     redirectPort: Number(env.GUARDJIN_REDIRECT_PORT || 7777),
     wishlistUrl: env.GUARDJIN_WISHLIST_URL || DEFAULT_WISHLIST_URL,
+    buildsDir: expandHome(env.GUARDJIN_BUILDS_DIR) || join(homeDir, 'builds'),
   };
+}
+
+/** Expands a leading ~ to the home folder. */
+export function expandHome(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  return path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path;
 }
 
 export function redirectUri(config: Config): string {

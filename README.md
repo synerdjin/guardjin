@@ -78,6 +78,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
 | `lookup_definition` | Searches game data (exotics, perks, mods, aspects, fragments, set bonuses), including items you don't own |
 | `optimize_armor` | Best 5-piece armor combinations for stat minimums and priorities, a required exotic, set bonuses, and stat mods |
+| `export_build` / `audit_build` | Save the equipped setup as a JSON build spec; check a character against a spec and get the equip/plug changes that close the gaps |
 | `champion_coverage` | Which champion types the equipped (or given) gear, subclass and artifact handle, with owned weapons that fill gaps |
 | `vault_summary` | Vault use vs capacity, full character buckets, postmaster counts |
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
@@ -128,6 +129,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `GUARDJIN_LANGUAGE` | `en` | Manifest language (`de`, `fr`, `es`, `ja`, ...) |
 | `GUARDJIN_REDIRECT_PORT` | `7777` | Must match the redirect URL registered with Bungie |
 | `GUARDJIN_WISHLIST_URL` | voltron.txt | Any DIM-format wishlist URL |
+| `GUARDJIN_BUILDS_DIR` | `~/.guardjin/builds` | Where `export_build` writes and `audit_build` looks up build specs by name |
 
 ## How it works
 
