@@ -72,3 +72,53 @@ export function availableActivities(activities: DestinyCharacterActivitiesCompon
     return [{ name, recommendedLight: a.recommendedLight || undefined, completed: a.isCompleted, canJoin: a.canJoin, modifiers }];
   });
 }
+
+/** Activity kinds get_activity_clears can filter on. */
+export const ACTIVITY_KINDS = ['raid', 'dungeon', 'strike', 'nightfall', 'lostSector', 'exoticMission'] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+const TYPE_NAMES: Record<string, ActivityKind> = {
+  raid: 'raid',
+  dungeon: 'dungeon',
+  strike: 'strike',
+  'vanguard op': 'strike',
+  nightfall: 'nightfall',
+  'lost sector': 'lostSector',
+  'exotic mission': 'exoticMission',
+};
+/** DestinyActivityModeType fallbacks for activities without a named type. */
+const MODE_KINDS: Record<number, ActivityKind> = { 4: 'raid', 82: 'dungeon', 18: 'strike', 3: 'strike', 46: 'nightfall', 16: 'nightfall', 87: 'lostSector' };
+
+/**
+ * What kind of activity a hash is. Newer raids and dungeons have no direct mode, so the activity
+ * type's name decides first and the mode is the fallback.
+ */
+export function activityKind(defs: Defs, activityHash: number): ActivityKind | undefined {
+  const def = defs.activity(activityHash);
+  if (!def) return undefined;
+  const typeName = defs.activityType(def.activityTypeHash)?.displayProperties?.name?.trim().toLowerCase();
+  return (typeName && TYPE_NAMES[typeName]) || (def.directActivityModeType !== undefined ? MODE_KINDS[def.directActivityModeType] : undefined);
+}
+
+/** "Duality: Master" → "Duality"; difficulty variants share one base name. */
+export function baseActivityName(name: string): string {
+  return name.replace(/:\s*(Standard|Normal|Master|Legend|Contest|Customize|Expert|Grandmaster|Hero|Adept|Epic)$/i, '').replace(/\s*\((Epic|Legend|Master)\)$/i, '').trim();
+}
+
+/**
+ * Raids and dungeons you can launch yourself. A dungeon you don't own shows up with canLead false
+ * (you can only join someone who owns it).
+ */
+export function launchableActivities(perCharacter: (DestinyCharacterActivitiesComponent | undefined)[], defs: Defs, kind: ActivityKind): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const acts of perCharacter) {
+    for (const a of acts?.availableActivities ?? []) {
+      if (activityKind(defs, a.activityHash) !== kind) continue;
+      const name = defs.activity(a.activityHash)?.displayProperties.name;
+      if (!name) continue;
+      const base = baseActivityName(name);
+      out.set(base, (out.get(base) ?? false) || a.canLead);
+    }
+  }
+  return out;
+}

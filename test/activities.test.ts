@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DestinyHistoricalStatsPeriodGroup, DestinyPostGameCarnageReportData } from 'bungie-api-ts/destiny2';
 import { summarizeActivity, summarizeReport } from '../src/history/activities.js';
+import { activityKind, baseActivityName, launchableActivities } from '../src/world/activity.js';
 import { fixtureDefs } from './helpers.js';
 
 const defs = fixtureDefs();
@@ -62,5 +63,19 @@ describe('summarizeReport', () => {
     expect(r).toMatchObject({ activity: 'The Desert Perpetual: Standard', difficultyTier: 2 });
     expect(r.players.map((p) => [p.name, p.you])).toEqual([['Me#0042', true], ['Friend#0042', false]]);
     expect(r.players[0].weapons.map((w) => [w.name, w.kills])).toEqual([['Fatebringer', 8], ['#999', 2]]);
+  });
+});
+
+describe('activity kinds and ownership', () => {
+  it('classifies by activity type name and groups difficulty variants', () => {
+    expect(activityKind(defs, DESERT_PERPETUAL)).toBe('raid');
+    expect(baseActivityName('Duality: Master')).toBe('Duality');
+    expect(baseActivityName('The Desert Perpetual (Epic): Standard')).toBe('The Desert Perpetual');
+  });
+
+  it('marks raids you can only join as not owned', () => {
+    const acts = (canLead: boolean) => ({ availableActivities: [{ activityHash: DESERT_PERPETUAL, canLead, canJoin: true, isVisible: true }] }) as never;
+    expect([...launchableActivities([acts(false)], defs, 'raid')]).toEqual([['The Desert Perpetual', false]]);
+    expect([...launchableActivities([acts(false), acts(true)], defs, 'raid')]).toEqual([['The Desert Perpetual', true]]);
   });
 });

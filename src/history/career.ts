@@ -4,6 +4,7 @@ import type {
   DestinyHistoricalWeaponStats,
 } from 'bungie-api-ts/destiny2';
 import type { Defs } from '../manifest/defs.js';
+import { activityKind, type ActivityKind } from '../world/activity.js';
 
 type Stats = Record<string, DestinyHistoricalStatsValue>;
 const num = (s: Stats | undefined, id: string) => s?.[id]?.basic?.value;
@@ -23,6 +24,8 @@ export function summarizeStats(allTime: Stats | undefined, all = false): Record<
 
 export interface Clear {
   name: string;
+  /** raid, dungeon, strike, nightfall, lostSector, exoticMission */
+  kind?: ActivityKind;
   completions: number;
   kills?: number;
   /** Fastest clear time as the game displays it. */
@@ -46,7 +49,7 @@ export function mergeClears(perCharacter: DestinyAggregateActivityStats[][], def
   return [...byHash].flatMap(([hash, v]) => {
     const name = defs.activity(hash)?.displayProperties.name;
     if (!name) return [];
-    return [{ name, completions: v.completions, kills: v.kills || undefined, fastest: v.fastest?.basic.displayValue, fastestMs: v.fastest?.basic.value }];
+    return [{ name, kind: activityKind(defs, hash), completions: v.completions, kills: v.kills || undefined, fastest: v.fastest?.basic.displayValue, fastestMs: v.fastest?.basic.value }];
   });
 }
 

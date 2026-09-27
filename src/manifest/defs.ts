@@ -136,6 +136,9 @@ export class Defs {
   commendationNode(hash: number | undefined) {
     return this.get<DestinySocialCommendationNodeDefinition>('DestinySocialCommendationNodeDefinition', hash);
   }
+  activityType(hash: number | undefined) {
+    return this.get<{ displayProperties?: { name?: string } }>('DestinyActivityTypeDefinition', hash);
+  }
   activityMode(hash: number | undefined) {
     return this.get<DestinyActivityModeDefinition>('DestinyActivityModeDefinition', hash);
   }

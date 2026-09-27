@@ -204,7 +204,7 @@ describe('career stats', () => {
       ],
       defs,
     );
-    expect(clears).toEqual([{ name: 'The Desert Perpetual: Standard', completions: 5, kills: 150, fastest: '10:00', fastestMs: 600000 }]);
+    expect(clears).toEqual([{ name: 'The Desert Perpetual: Standard', kind: 'raid', completions: 5, kills: 150, fastest: '10:00', fastestMs: 600000 }]);
   });
 
   it('merges weapon stats across characters and computes precision share', () => {

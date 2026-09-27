@@ -98,7 +98,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `get_current_activity` | Where a character is (orbit, activity, offline), fireteam, and whether gear changes will likely be accepted |
 | `get_kiosks` / `get_vendor_receipts` / `get_commendations` | Kiosk contents, refundable purchases, commendation scores |
 | `get_career_stats` | Lifetime stats per mode (raid, dungeon, Nightfall, Crucible...) |
-| `get_activity_clears` | Completions and fastest clear time per raid, dungeon and strike |
+| `get_activity_clears` | Completions and fastest clear time per raid, dungeon and strike; filter by type, with owned and never-cleared raids/dungeons |
 | `get_weapon_stats` | Lifetime kills and precision per weapon |
 | `get_character` | One character read live: power, stats, and everything equipped |
 | `get_recent_activities` | Recent activities per character (raids, dungeons, Crucible...) with result, duration and K/D/A |

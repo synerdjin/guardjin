@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   DestinyActivityModeType,
+  DestinyComponentType,
   DestinyStatsGroupType,
   PeriodType,
   getActivityHistory,
@@ -14,6 +15,7 @@ import type { Context } from '../context.js';
 import { unwrap } from '../bungie/http.js';
 import { mergeClears, mergeWeapons, summarizeStats } from '../history/career.js';
 import { summarizeActivity, summarizeReport } from '../history/activities.js';
+import { ACTIVITY_KINDS, baseActivityName, launchableActivities } from '../world/activity.js';
 import { READ_ONLY, UserError, ok, paginate, resolveCharacter, safe } from './util.js';
 
 const MODES = {
@@ -147,16 +149,18 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
       title: 'Activity clears',
       description:
         'How many times you have completed each activity (raids, dungeons, strikes, Nightfalls...), with your fastest clear time and total kills, combined across characters. ' +
-        'Difficulty variants (Normal, Master, Contest) are separate rows.',
+        'Difficulty variants (Normal, Master, Contest) are separate rows. With type raid or dungeon it also says which ones you own (can launch yourself) and lists the ones you have never cleared. ' +
+        'Solo and flawless clears are triumphs: use search_triumphs (e.g. "Solo", "Flawless").',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring of the activity name, e.g. "Vault of Glass", "Master"'),
+        type: z.enum(ACTIVITY_KINDS).optional().describe('Only this kind of activity'),
         minCompletions: z.number().int().min(0).optional().describe('Default 1'),
         sort: z.enum(['completions', 'fastest', 'name']).optional().describe('Default: completions'),
         limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ query, minCompletions, sort, limit }) => {
+    safe(async ({ query, type, minCompletions, sort, limit }) => {
       const [inv, defs, account] = await Promise.all([ctx.profile.inventory(), ctx.manifest.load(), ctx.account.get()]);
       const perCharacter = await Promise.all(
         inv.characters.map(async (c) =>
@@ -164,7 +168,14 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
         ),
       );
       const q = query?.trim().toLowerCase();
-      const rows = mergeClears(perCharacter, defs).filter((c) => c.completions >= (minCompletions ?? 1) && (!q || c.name.toLowerCase().includes(q)));
+      const rows = mergeClears(perCharacter, defs).filter(
+        (c) => c.completions >= (minCompletions ?? 1) && (!q || c.name.toLowerCase().includes(q)) && (!type || c.kind === type),
+      );
+      let ownership: Map<string, boolean> | undefined;
+      if (type === 'raid' || type === 'dungeon') {
+        const acts = await ctx.profile.components([DestinyComponentType.CharacterActivities]);
+        ownership = launchableActivities(Object.values(acts.characterActivities?.data ?? {}), defs, type);
+      }
       rows.sort((a, b) =>
         sort === 'name'
           ? a.name.localeCompare(b.name)
@@ -173,7 +184,15 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
             : b.completions - a.completions || a.name.localeCompare(b.name),
       );
       const page = paginate(rows, 0, limit ?? 30);
-      return ok({ ...page, items: page.items.map(({ fastestMs: _ms, ...c }) => c) });
+      const cleared = new Set(rows.map((r) => baseActivityName(r.name)));
+      return ok({
+        ...page,
+        items: page.items.map(({ fastestMs: _ms, ...c }) => ({ ...c, owned: ownership?.get(baseActivityName(c.name)) })),
+        neverCleared: ownership
+          ? [...ownership].filter(([name]) => !cleared.has(name)).map(([name, owned]) => ({ name, owned }))
+          : undefined,
+        notOwned: ownership ? [...ownership].filter(([, owned]) => !owned).map(([name]) => name) : undefined,
+      });
     }),
   );
 
