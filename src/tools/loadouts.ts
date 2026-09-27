@@ -161,6 +161,7 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
         name: defs.loadoutName(ids.nameHash)?.name,
         replaces: slot.loadout ? describeLoadout(slot.loadout, inv) : undefined,
         equipFirst: equipPlan?.toEquip.map((i) => i.name),
+        fillers: equipPlan?.fillers.length ? equipPlan.fillers.map((f) => `${f.item.name} replaces ${f.replaces.name}`) : undefined,
         problems: equipPlan?.errors.map((e) => e.error),
       };
       if (slot.loadout && !overwrite && !dryRun) {

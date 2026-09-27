@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { HttpClient, HttpClientConfig } from 'bungie-api-ts/http';
 import type { DestinyAccount } from '../src/bungie/account.js';
 import { Buckets } from '../src/inventory/constants.js';
-import { executeTransfers, planEquip, planTransfers } from '../src/vault/actions.js';
+import { executeEquip, executeTransfers, planEquip, planTransfers } from '../src/vault/actions.js';
 import { HUNTER, WARLOCK, fixtureDefs, makeInventory, makeItem } from './helpers.js';
 
 const defs = fixtureDefs();
@@ -71,13 +71,43 @@ describe('planEquip', () => {
     const legendaryArms = makeItem({ bucketHash: Buckets.Gauntlets, slot: 'Gauntlets' });
     const inv = makeInventory([equippedExoticArms, exoticHelm, legendaryArms]);
 
-    const blocked = planEquip(inv, defs, WARLOCK, [exoticHelm]);
+    const blocked = planEquip(inv, defs, WARLOCK, [exoticHelm], { autoResolveExotic: false });
     expect(blocked.errors[0].error).toMatch(/conflicts with the equipped exotic/);
 
     const ok = planEquip(inv, defs, WARLOCK, [exoticHelm, legendaryArms]);
     expect(ok.errors).toEqual([]);
-    expect(ok.toEquip).toEqual([exoticHelm, legendaryArms]);
+    expect(ok.toEquip).toEqual([legendaryArms, exoticHelm]);
     expect(ok.transfers.steps.map((s) => s.action)).toEqual(['from-vault', 'from-vault']);
+  });
+});
+
+describe('planEquip exotic swap', () => {
+  it('adds the best legendary for the clashing exotic slot and orders legendaries first', () => {
+    const equippedExoticArms = makeItem({ isExotic: true, hash: 5, bucketHash: Buckets.Gauntlets, slot: 'Gauntlets', location: onWarlock, equipped: true });
+    const exoticHelm = makeItem({ isExotic: true, hash: 6 });
+    const vaultArms = makeItem({ bucketHash: Buckets.Gauntlets, slot: 'Gauntlets', power: 460 });
+    const carriedArms = makeItem({ bucketHash: Buckets.Gauntlets, slot: 'Gauntlets', power: 400, location: onWarlock });
+    const hunterArms = makeItem({ bucketHash: Buckets.Gauntlets, slot: 'Gauntlets', power: 500, classType: 'hunter' });
+    const plan = planEquip(makeInventory([equippedExoticArms, exoticHelm, vaultArms, carriedArms, hunterArms]), defs, WARLOCK, [exoticHelm]);
+    expect(plan.errors).toEqual([]);
+    expect(plan.fillers).toEqual([{ item: carriedArms, replaces: equippedExoticArms }]);
+    expect(plan.toEquip).toEqual([carriedArms, exoticHelm]);
+  });
+
+  it('equips legendaries in a separate call before exotics', async () => {
+    const legendary = makeItem({ location: onWarlock, bucketHash: Buckets.Gauntlets });
+    const exotic = makeItem({ location: onWarlock, isExotic: true });
+    const calls: string[][] = [];
+    const http = vi.fn(async (config: HttpClientConfig) => {
+      const ids = (config.body as { itemIds: string[] }).itemIds;
+      calls.push(ids);
+      return { Response: { equipResults: ids.map((id) => ({ itemInstanceId: id, equipStatus: 1 })) }, ErrorCode: 1 };
+    }) as unknown as HttpClient;
+    const account = { membershipType: 3, membershipId: 'm1', displayName: 'me', otherMemberships: [] } as unknown as DestinyAccount;
+    const plan = { transfers: { steps: [], errors: [], alreadyThere: [] }, toEquip: [exotic, legendary], errors: [], fillers: [] };
+    const res = await executeEquip(http, account, WARLOCK, plan);
+    expect(calls).toEqual([[legendary.instanceId], [exotic.instanceId]]);
+    expect(res.equip.every((e) => e.ok)).toBe(true);
   });
 });
 

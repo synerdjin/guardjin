@@ -3,7 +3,7 @@ import { equipItems, pullFromPostmaster, setItemLockState, transferItem } from '
 import type { DestinyAccount } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
 import { ARMOR_BUCKETS, Buckets, WEAPON_BUCKETS } from '../inventory/constants.js';
-import type { InventoryModel, Item } from '../inventory/model.js';
+import type { Character, InventoryModel, Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
 
 export type Destination = { type: 'vault' } | { type: 'character'; characterId: string };
@@ -203,15 +203,45 @@ export async function executeTransfers(http: HttpClient, account: DestinyAccount
 
 export interface EquipPlan {
   transfers: TransferPlan;
+  /** Non-exotics first: the game refuses an exotic while another exotic of that kind is still worn (error 1641). */
   toEquip: Item[];
   errors: PlanError[];
+  /** Legendaries added to take an equipped exotic's slot so a new exotic can go on. */
+  fillers: { item: Item; replaces: Item }[];
+}
+
+/**
+ * Best legendary to take `slotOf`'s slot: same class and bucket, not equipped anywhere, preferring
+ * items already on the character, then higher power.
+ */
+function pickFiller(inv: InventoryModel, character: Character, slotOf: Item): Item | undefined {
+  return inv.items
+    .filter(
+      (i) =>
+        i.instanceId && !i.isExotic && !i.equipped && i.bucketHash === slotOf.bucketHash &&
+        (i.classType === 'any' || i.classType === character.classType) &&
+        i.location.type !== 'postmaster' && i.location.type !== 'profile',
+    )
+    .sort(
+      (a, b) =>
+        Number(b.location.type === 'character' && b.location.characterId === character.id) -
+          Number(a.location.type === 'character' && a.location.characterId === character.id) ||
+        (b.power ?? 0) - (a.power ?? 0),
+    )[0];
 }
 
 /** Checks class restrictions and exotic limits, and plans any transfers needed before equipping. */
-export function planEquip(inv: InventoryModel, defs: Defs, characterId: string, items: Item[]): EquipPlan {
+export function planEquip(
+  inv: InventoryModel,
+  defs: Defs,
+  characterId: string,
+  items: Item[],
+  opts: { autoResolveExotic?: boolean } = {},
+): EquipPlan {
   const character = inv.characters.find((c) => c.id === characterId);
   const errors: PlanError[] = [];
-  if (!character) return { transfers: { steps: [], errors: [], alreadyThere: [] }, toEquip: [], errors: [{ itemId: characterId, error: 'unknown character' }] };
+  const fillers: EquipPlan['fillers'] = [];
+  if (!character) return { transfers: { steps: [], errors: [], alreadyThere: [] }, toEquip: [], errors: [{ itemId: characterId, error: 'unknown character' }], fillers };
 
   const valid: Item[] = [];
   for (const it of items) {
@@ -241,7 +271,11 @@ export function planEquip(inv: InventoryModel, defs: Defs, characterId: string, 
           i.equipped && i.location.type === 'character' && i.location.characterId === characterId &&
           i.kind === kind && i.isExotic && !newSlots.has(i.bucketHash) && i !== incoming[0],
       );
-      if (staying) {
+      const filler = staying && opts.autoResolveExotic !== false ? pickFiller(inv, character, staying) : undefined;
+      if (staying && filler) {
+        valid.push(filler);
+        fillers.push({ item: filler, replaces: staying });
+      } else if (staying) {
         errors.push({
           item: incoming[0],
           itemId: incoming[0].instanceId!,
@@ -255,7 +289,8 @@ export function planEquip(inv: InventoryModel, defs: Defs, characterId: string, 
   const needsMove = ok.filter((i) => !(i.location.type === 'character' && i.location.characterId === characterId));
   const transfers = planTransfers(inv, defs, needsMove.map((item) => ({ item, to: { type: 'character', characterId } })));
   const blocked = new Set(transfers.errors.map((e) => e.item));
-  return { transfers, toEquip: ok.filter((i) => !blocked.has(i)), errors: [...errors, ...transfers.errors] };
+  const toEquip = ok.filter((i) => !blocked.has(i)).sort((a, b) => Number(a.isExotic) - Number(b.isExotic));
+  return { transfers, toEquip, errors: [...errors, ...transfers.errors], fillers };
 }
 
 export async function executeEquip(
@@ -266,14 +301,16 @@ export async function executeEquip(
 ): Promise<{ transfers: StepResult[]; equip: { item: string; itemId: string; ok: boolean; status?: number }[] }> {
   const transfers = await executeTransfers(http, account, plan.transfers);
   const failed = new Set(transfers.filter((t) => !t.ok).map((t) => t.itemId));
-  const ids = plan.toEquip.map((i) => i.instanceId!).filter((id) => !failed.has(id));
-  if (!ids.length) return { transfers, equip: [] };
-  const res = await unwrap(equipItems(http, { itemIds: ids, characterId, membershipType: account.membershipType }));
+  const ready = plan.toEquip.filter((i) => !failed.has(i.instanceId!));
   const nameOf = (id: string) => plan.toEquip.find((i) => i.instanceId === id)?.name ?? id;
-  return {
-    transfers,
-    equip: res.equipResults.map((r) => ({ item: nameOf(r.itemInstanceId), itemId: r.itemInstanceId, ok: r.equipStatus === 1, status: r.equipStatus })),
-  };
+  const equip: { item: string; itemId: string; ok: boolean; status?: number }[] = [];
+  // Two calls, legendaries first, so a worn exotic is gone before the new one goes on (error 1641).
+  for (const batch of [ready.filter((i) => !i.isExotic), ready.filter((i) => i.isExotic)]) {
+    if (!batch.length) continue;
+    const res = await unwrap(equipItems(http, { itemIds: batch.map((i) => i.instanceId!), characterId, membershipType: account.membershipType }));
+    equip.push(...res.equipResults.map((r) => ({ item: nameOf(r.itemInstanceId), itemId: r.itemInstanceId, ok: r.equipStatus === 1, status: r.equipStatus })));
+  }
+  return { transfers, equip };
 }
 
 export async function setLocks(

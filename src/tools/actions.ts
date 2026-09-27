@@ -71,24 +71,27 @@ export function registerActionTools(server: McpServer, ctx: Context): void {
     {
       title: 'Equip items',
       description:
-        'Equips weapons/armor (and subclass or ghost) on a character, moving them there first if needed. Checks class restrictions and the one-exotic-weapon / one-exotic-armor limit. ' +
+        'Equips weapons/armor (and subclass or ghost) on a character, moving them there first if needed. Checks class restrictions and the one-exotic-weapon / one-exotic-armor limit: ' +
+        'when a new exotic would clash with one that stays equipped, it also equips your best legendary in that slot (see `fillers`) and equips legendaries before exotics. ' +
         `The character must be in orbit, in a social space, or offline. ${ACTION_NOTE}`,
       inputSchema: {
         items: z.array(z.string()).min(1).max(20).describe('Item ids or unique names'),
         character: z.string().optional().describe('Character id or class name; default is the most recently played'),
+        autoResolveExotic: z.boolean().optional().describe('Equip a legendary in a clashing exotic\'s slot automatically (default true)'),
         dryRun: z.boolean().optional(),
       },
       annotations: WRITE,
     },
-    safe(async ({ items, character, dryRun }) => {
+    safe(async ({ items, character, autoResolveExotic, dryRun }) => {
       const inv = await ctx.profile.inventory(true);
       const defs = await ctx.manifest.load();
       const c = resolveCharacter(inv, character);
-      const plan = planEquip(inv, defs, c.id, resolveItems(inv, items));
+      const plan = planEquip(inv, defs, c.id, resolveItems(inv, items), { autoResolveExotic });
       const summary = {
         character: c.className,
         transfers: describePlan(plan.transfers, inv).steps,
         equip: plan.toEquip.map((i) => i.name),
+        fillers: plan.fillers.length ? plan.fillers.map((f) => `${f.item.name} [${f.item.instanceId}] replaces ${f.replaces.name}`) : undefined,
         errors: plan.errors.map((e) => e.error),
       };
       if (dryRun || !plan.toEquip.length) return ok({ dryRun: !!dryRun, ...summary });

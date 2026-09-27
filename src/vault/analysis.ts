@@ -137,6 +137,14 @@ export interface CleanupCandidate {
 
 const VERDICT_RANK: Record<Verdict, number> = { wishlist: 3, unknown: 2, 'not-on-wishlist': 1, trash: 0 };
 
+/** Weapon tier for ranking copies: T1–T5, 0 for untiered, -1 for legacy weapons stuck at power 10. */
+export function weaponTierRank(i: Item): number {
+  if (i.gearTier) return i.gearTier;
+  return i.power !== undefined && i.power <= 10 ? -1 : 0;
+}
+
+const tierLabel = (i: Item) => (i.gearTier ? `T${i.gearTier}` : i.power !== undefined && i.power <= 10 ? 'legacy (power 10)' : 'untiered');
+
 export function suggestCleanup(
   inv: InventoryModel,
   defs: Defs,
@@ -181,30 +189,42 @@ export function suggestCleanup(
   }
 
   if (kinds.includes('weapon') && opts.wishlist) {
+    const bestTierByName = new Map<string, number>();
     for (const group of findDuplicates(inv, defs, opts.wishlist)) {
       if (group.kind !== 'weapon') continue;
+      // Tier first: a higher-tier copy keeps its enhanced perks and stats even with a worse roll.
       const ranked = [...group.items].sort(
         (a, b) =>
+          weaponTierRank(b.item) - weaponTierRank(a.item) ||
           VERDICT_RANK[b.wishlist!.verdict] - VERDICT_RANK[a.wishlist!.verdict] ||
           Number(b.item.crafted) - Number(a.item.crafted) ||
           (b.item.power ?? 0) - (a.item.power ?? 0),
       );
       const best = ranked[0];
+      bestTierByName.set(group.name, weaponTierRank(best.item));
       for (const entry of ranked.slice(1)) {
         if (!eligible(entry.item)) continue;
-        const worse = VERDICT_RANK[entry.wishlist!.verdict] < VERDICT_RANK[best.wishlist!.verdict];
+        const lowerTier = weaponTierRank(entry.item) < weaponTierRank(best.item);
+        const worseRoll = VERDICT_RANK[entry.wishlist!.verdict] < VERDICT_RANK[best.wishlist!.verdict];
         add({
           item: entry.item,
           reason: 'worse-duplicate',
-          detail: `${group.items.length} copies; best copy is ${best.wishlist!.verdict}${best.item.locked ? ' and locked' : ''}, this one is ${entry.wishlist!.verdict}`,
-          confidence: worse ? 2 : 1,
+          detail: `${group.items.length} copies; best copy is ${tierLabel(best.item)}, ${best.wishlist!.verdict}${best.item.locked ? ' and locked' : ''}; this one is ${tierLabel(entry.item)}, ${entry.wishlist!.verdict}`,
+          confidence: lowerTier || worseRoll ? 2 : 1,
         });
       }
     }
     for (const it of inv.items.filter((i) => i.kind === 'weapon' && eligible(i))) {
       const r = evaluateRoll(it, opts.wishlist, defs);
       if (r.verdict === 'trash') {
-        add({ item: it, reason: 'wishlist-trash', detail: `Wishlist marks this roll as trash${r.notes?.length ? `: ${r.notes[0]}` : ''}`, confidence: 3 });
+        // A trash roll on the highest-tier copy you own is still the copy to keep until a better one drops.
+        const topTier = (it.gearTier ?? 0) >= 4 && weaponTierRank(it) >= (bestTierByName.get(it.name) ?? weaponTierRank(it));
+        add({
+          item: it,
+          reason: 'wishlist-trash',
+          detail: `Wishlist marks this roll as trash${r.notes?.length ? `: ${r.notes[0]}` : ''}${topTier ? `; but it is your highest-tier copy (${tierLabel(it)})` : ''}`,
+          confidence: topTier ? 1 : 3,
+        });
       }
     }
   }

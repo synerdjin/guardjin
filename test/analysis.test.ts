@@ -75,6 +75,24 @@ describe('suggestCleanup', () => {
     expect(cleanup).toHaveLength(1);
     expect(cleanup[0]).toMatchObject({ item: meh, reason: 'wishlist-trash', confidence: 3 });
   });
+
+  it('ranks weapon duplicates by tier before the wishlist verdict', () => {
+    const perk = (hash: number) => ({ hash, name: defs.item(hash)!.displayProperties.name });
+    const weapon = (killPerk: number, gearTier: number) =>
+      makeItem({
+        kind: 'weapon',
+        name: 'Fatebringer',
+        hash: 2171478765,
+        gearTier,
+        weapon: { perks: [{ socketIndex: 4, equipped: perk(killPerk), options: [perk(killPerk)] }] },
+      });
+    const t5 = weapon(47981717, 5); // Opening Shot: trash on this wishlist
+    const t2 = weapon(1015611457, 2); // Kill Clip: wishlist roll
+    const wl = parseWishlist(`dimwishlist:item=2171478765&perks=1015611457\ndimwishlist:item=-2171478765&perks=47981717`);
+    const cleanup = suggestCleanup(makeInventory([t5, t2]), defs, { wishlist: wl });
+    expect(cleanup.find((c) => c.item === t2)).toMatchObject({ reason: 'worse-duplicate', confidence: 2 });
+    expect(cleanup.find((c) => c.item === t5)).toMatchObject({ reason: 'wishlist-trash', confidence: 1 });
+  });
 });
 
 describe('vaultSummary', () => {

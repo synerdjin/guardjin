@@ -112,7 +112,7 @@ export function planEquipLoadout(inv: InventoryModel, defs: Defs, slot: LoadoutS
     slot: slot as EquipLoadoutPlan['slot'],
     transfers: planTransfers(inv, defs, elsewhere.map((item) => ({ item, to: { type: 'character', characterId: slot.characterId } }))),
     missing: slot.loadout.items.filter((i) => i.missing).map((i) => i.id),
-    conflicts: planEquip(inv, defs, slot.characterId, items).errors.filter((e) => /exotic/i.test(e.error)).map((e) => e.error),
+    conflicts: planEquip(inv, defs, slot.characterId, items, { autoResolveExotic: false }).errors.filter((e) => /exotic/i.test(e.error)).map((e) => e.error),
     alreadyActive: slot.loadout.active,
   };
 }
