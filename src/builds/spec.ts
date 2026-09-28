@@ -57,7 +57,7 @@ export type BuildSpec = z.infer<typeof BuildSpecSchema>;
 const armorSlotKey = (bucketHash: number): ArmorSlotKey | undefined => ARMOR_SLOT_KEYS[(ARMOR_BUCKETS as readonly number[]).indexOf(bucketHash)];
 const weaponSlotKey = (bucketHash: number) => WEAPON_SLOT_KEYS[(WEAPON_BUCKETS as readonly number[]).indexOf(bucketHash)];
 const lc = (s: string) => s.trim().toLowerCase();
-const EMPTYISH = /^(empty|default)\b/i;
+export const EMPTYISH = /^(empty|default)\b/i;
 
 function equippedOn(inv: InventoryModel, characterId: string): Item[] {
   return inv.items.filter((i) => i.equipped && i.location.type === 'character' && i.location.characterId === characterId);

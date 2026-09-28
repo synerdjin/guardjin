@@ -6,6 +6,7 @@ import { ARMOR_BUCKETS, ARMOR_STAT_KEYS, ARMOR_STATS, type ArmorStatKey } from '
 import { locationLabel, namedStats, statTotal, type Character, type InventoryModel, type Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
 import { weaponChampion } from '../builds/champions.js';
+import { EMPTYISH } from '../builds/spec.js';
 
 export { UserError };
 
@@ -88,10 +89,40 @@ export function resolveItems(inv: InventoryModel, refs: string[]): Item[] {
   return refs.map((r) => resolveItem(inv, r));
 }
 
+const TRAIT_TYPE = /^(enhanced )?trait$/i;
+
+/**
+ * A human-readable label built only from what the item card shows, so several copies of one item can be
+ * told apart: `name · power · T<tier> · <standout perks or armor stats> · locked · equipped`.
+ */
+export function itemLabel(item: Item, defs: Pick<Defs, 'item'>, armorStats?: number[]): string {
+  const parts: string[] = [item.name];
+  if (item.power) parts.push(String(item.power));
+  if (item.gearTier) parts.push(`T${item.gearTier}`);
+  let distinguisher: string | undefined;
+  if (item.weapon) {
+    const traits = item.weapon.perks
+      .filter((c) => TRAIT_TYPE.test(defs.item(c.equipped.hash)?.itemTypeDisplayName ?? '') && !EMPTYISH.test(c.equipped.name))
+      .slice(0, 2)
+      .map((c) => c.equipped.name);
+    if (traits.length) distinguisher = traits.join(' / ');
+  } else if (item.armor) {
+    const a = item.armor;
+    const name = (item.isExotic ? a.intrinsic?.name : undefined) ?? a.archetype ?? a.set?.name;
+    const total = statTotal(armorStats ?? a.noMods);
+    distinguisher = name ? `${name} ${total}` : String(total);
+  }
+  if (distinguisher) parts.push(distinguisher);
+  if (item.locked) parts.push('locked');
+  if (item.equipped) parts.push('equipped');
+  return parts.join(' · ');
+}
+
 /** Compact item summary used in list results. */
 export function briefItem(item: Item, inv: InventoryModel, defs: Defs, opts: { masterworkedStats?: boolean } = {}) {
   const out: Record<string, unknown> = {
     id: item.instanceId,
+    label: itemLabel(item, defs, opts.masterworkedStats ? item.armor?.masterworked : item.armor?.noMods),
     name: item.name,
     type: item.typeName,
     slot: item.slot,

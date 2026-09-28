@@ -37,7 +37,8 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
       title: 'Search inventory',
       description:
         'Searches all your gear (vault, characters, postmaster) with filters. Returns compact summaries with item ids to pass to other tools. ' +
-        'Armor stats are shown without mods (add assumeMasterworked to see fully-masterworked stats). Weapon perks list every selectable option per column.',
+        'Armor stats are shown without mods (add assumeMasterworked to see fully-masterworked stats). Weapon perks list every selectable option per column. ' +
+        'Each result has a `label` (power + standout perks) — use it, not invented letters, when referring to one of several copies.',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring of the item name'),
         kind: z.enum(['weapon', 'armor', 'subclass', 'ghost', 'any']).optional().describe('Default: any'),
