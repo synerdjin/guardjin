@@ -59,7 +59,7 @@ describe('evaluateRoll', () => {
     const r = evaluateRoll(fatebringer([[EXTENDED_BARREL, ARROWHEAD], [APPENDED_MAG], [KILLING_WIND], [KILL_CLIP]]), wl, defs);
     expect(r.verdict).toBe('wishlist');
     expect(r.matchedPerks).toEqual(['Appended Mag', 'Killing Wind', 'Kill Clip']);
-    expect(r.notes?.[0]).toContain('Kill Clip');
+    expect(r.notes?.[0].note).toContain('Kill Clip');
   });
 
   it('flags trash rolls', () => {
@@ -76,5 +76,59 @@ describe('evaluateRoll', () => {
     const other = fatebringer([[ARROWHEAD]]);
     other.hash = 12345;
     expect(evaluateRoll(other, parseWishlist(`dimwishlist:item=${FATEBRINGER}&perks=${ARROWHEAD}`), defs).verdict).toBe('unknown');
+  });
+});
+
+describe('titles, sources and notes', () => {
+  const long = `Recommended perks: Kill Clip. ${'x'.repeat(1500)} END`;
+  const wl = parseWishlist(`title:Compiled list
+description:many authors
+
+// taken from somewhere
+
+title:PvE Podcast - Hand Cannons
+description:first section
+
+// Fatebringer - PvE Minor god 1
+// (Arrowhead Brake), (Appended Mag)
+//notes:Minor pick
+dimwishlist:item=${FATEBRINGER}&perks=${ARROWHEAD},${KILLING_WIND}
+
+// Fatebringer - PvE Boss god 1
+//notes:${long}
+dimwishlist:item=${FATEBRINGER}&perks=${APPENDED_MAG},${KILL_CLIP}
+
+title:Garden of Salvation raid weapons breakdown
+//notes:Raid pick
+dimwishlist:item=${FATEBRINGER}&perks=${KILL_CLIP}
+`);
+  const roll = fatebringer([[EXTENDED_BARREL, ARROWHEAD], [APPENDED_MAG], [KILLING_WIND], [KILL_CLIP]]);
+
+  it('keeps the first title as the file title and records each entry\'s block', () => {
+    expect(wl.title).toBe('Compiled list');
+    expect(wl.entries.get(FATEBRINGER)!.map((e) => e.source)).toEqual([
+      'PvE Podcast - Hand Cannons › Fatebringer - PvE Minor god 1',
+      'PvE Podcast - Hand Cannons › Fatebringer - PvE Boss god 1',
+      'Garden of Salvation raid weapons breakdown',
+    ]);
+  });
+
+  it('returns notes from the best-matching entries first, capped at 1200 characters', () => {
+    const r = evaluateRoll(roll, wl, defs);
+    // Boss matches two equipped perks; minor and raid one each, and the minor entry is more specific (two perks).
+    expect(r.notes?.map((n) => n.source)).toEqual([
+      'PvE Podcast - Hand Cannons › Fatebringer - PvE Boss god 1',
+      'PvE Podcast - Hand Cannons › Fatebringer - PvE Minor god 1',
+      'Garden of Salvation raid weapons breakdown',
+    ]);
+    expect(r.notes![0].note).toHaveLength(1201);
+    expect(r.notes![0].note.startsWith('Recommended perks: Kill Clip.')).toBe(true);
+    expect(r.truncated).toBe(true);
+  });
+
+  it('returns full notes on request', () => {
+    const r = evaluateRoll(roll, wl, defs, { fullNotes: true });
+    expect(r.notes![0].note).toBe(long);
+    expect(r.truncated).toBeUndefined();
   });
 });

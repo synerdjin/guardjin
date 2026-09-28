@@ -222,7 +222,7 @@ export function suggestCleanup(
         add({
           item: it,
           reason: 'wishlist-trash',
-          detail: `Wishlist marks this roll as trash${r.notes?.length ? `: ${r.notes[0]}` : ''}${topTier ? `; but it is your highest-tier copy (${tierLabel(it)})` : ''}`,
+          detail: `Wishlist marks this roll as trash${r.notes?.length ? `: ${r.notes[0].note}` : ''}${topTier ? `; but it is your highest-tier copy (${tierLabel(it)})` : ''}`,
           confidence: topTier ? 1 : 3,
         });
       }

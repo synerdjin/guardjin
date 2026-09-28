@@ -9,9 +9,12 @@ export interface WishlistEntry {
   perks: number[];
   trash: boolean;
   notes?: string;
+  /** The section and block this entry came from, e.g. "PvE Podcast 174 - The Best Machine Guns › Hammerhead - PvE Boss god 1". */
+  source?: string;
 }
 
 export interface Wishlist {
+  /** The file's own title (its first `title:` line). */
   title?: string;
   /** Entries keyed by (positive) item hash; WISHLIST_ANY_ITEM applies to every item. */
   entries: Map<number, WishlistEntry[]>;
@@ -20,11 +23,19 @@ export interface Wishlist {
 
 export type Verdict = 'wishlist' | 'trash' | 'not-on-wishlist' | 'unknown';
 
+export interface WishlistNote {
+  source?: string;
+  note: string;
+}
+
 export interface WishlistResult {
   verdict: Verdict;
   /** Perk names from the best matching entry. */
   matchedPerks?: string[];
-  notes?: string[];
+  /** Notes from the best-matching entries first. */
+  notes?: WishlistNote[];
+  /** Set when a note was cut short. */
+  truncated?: boolean;
 }
 
 const REFRESH_MS = 24 * 60 * 60 * 1000;
@@ -40,21 +51,46 @@ export function parseWishlist(text: string): Wishlist {
     return s;
   };
   let title: string | undefined;
+  let section: string | undefined;
+  let header: string | undefined;
+  let source: string | undefined;
   let blockNotes: string | undefined;
+  let blockStart = true;
   let size = 0;
+  const setSource = () => {
+    const parts = [section, header].filter(Boolean);
+    source = parts.length ? intern(parts.join(' › ')) : undefined;
+  };
 
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) {
       blockNotes = undefined;
+      blockStart = true;
       continue;
     }
+    const startsBlock = blockStart;
+    blockStart = false;
     if (line.startsWith('title:')) {
-      title = line.slice(6).trim();
+      // The first title names the whole file; later ones start a new section (voltron concatenates many lists).
+      if (title === undefined) title = line.slice(6).trim();
+      else {
+        section = line.slice(6).trim();
+        header = undefined;
+        setSource();
+      }
       continue;
     }
     if (line.startsWith('//notes:')) {
       blockNotes = intern(line.slice(8).trim());
+      continue;
+    }
+    if (line.startsWith('//')) {
+      // The first comment of a block names it ("// Hammerhead - PvE Boss god 1"); later ones list perks.
+      if (startsBlock) {
+        header = line.slice(2).trim() || undefined;
+        setSource();
+      }
       continue;
     }
     if (!line.startsWith('dimwishlist:')) continue;
@@ -74,7 +110,7 @@ export function parseWishlist(text: string): Wishlist {
     const key = itemRaw === WISHLIST_ANY_ITEM ? WISHLIST_ANY_ITEM : Math.abs(itemRaw);
     const notes = inlineNotes ? intern(inlineNotes) : blockNotes;
     const list = entries.get(key);
-    const entry: WishlistEntry = { perks, trash, notes };
+    const entry: WishlistEntry = { perks, trash, notes, source };
     if (list) list.push(entry);
     else entries.set(key, [entry]);
     size++;
@@ -84,36 +120,61 @@ export function parseWishlist(text: string): Wishlist {
 
 const normalizePerkName = (name: string) => name.toLowerCase().replace(/^enhanced\s+/, '').replace(/\s+enhanced$/, '').trim();
 
-/** Evaluates a weapon roll against the wishlist. Perks are compared by name so enhanced variants match. */
-export function evaluateRoll(item: Item, wishlist: Wishlist, defs: Defs): WishlistResult {
+const MAX_NOTES = 3;
+const NOTE_LIMIT = 1200;
+
+/**
+ * Evaluates a weapon roll against the wishlist. Perks are compared by name so enhanced variants match.
+ * Notes come from the entries that match the most equipped perks first; `fullNotes` lifts the length cap.
+ */
+export function evaluateRoll(item: Item, wishlist: Wishlist, defs: Defs, opts: { fullNotes?: boolean } = {}): WishlistResult {
   if (!item.weapon) return { verdict: 'unknown' };
   const entries = [...(wishlist.entries.get(item.hash) ?? []), ...(wishlist.entries.get(WISHLIST_ANY_ITEM) ?? [])];
   if (!entries.length) return { verdict: 'unknown' };
 
   const available = new Set<string>();
-  for (const col of item.weapon.perks) for (const o of col.options) available.add(normalizePerkName(o.name));
-  if (item.weapon.intrinsic) available.add(normalizePerkName(item.weapon.intrinsic.name));
-  if (item.weapon.masterwork) available.add(normalizePerkName(item.weapon.masterwork.name));
+  const equipped = new Set<string>();
+  for (const col of item.weapon.perks) {
+    for (const o of col.options) available.add(normalizePerkName(o.name));
+    equipped.add(normalizePerkName(col.equipped.name));
+  }
+  for (const p of [item.weapon.intrinsic, item.weapon.masterwork]) {
+    if (!p) continue;
+    available.add(normalizePerkName(p.name));
+    equipped.add(normalizePerkName(p.name));
+  }
 
   const perkName = (h: number) => defs.item(h)?.displayProperties.name ?? `#${h}`;
-  let bestGood: WishlistEntry | undefined;
-  let bestTrash: WishlistEntry | undefined;
-  const goodNotes = new Set<string>();
-  const trashNotes = new Set<string>();
+  const good: { entry: WishlistEntry; equipped: number }[] = [];
+  const trash: { entry: WishlistEntry; equipped: number }[] = [];
   for (const e of entries) {
-    const matches = e.perks.every((h) => available.has(normalizePerkName(perkName(h))));
-    if (!matches) continue;
-    if (e.trash) {
-      if (!bestTrash || e.perks.length > bestTrash.perks.length) bestTrash = e;
-      if (e.notes) trashNotes.add(e.notes);
-    } else {
-      if (!bestGood || e.perks.length > bestGood.perks.length) bestGood = e;
-      if (e.notes) goodNotes.add(e.notes);
-    }
+    const names = e.perks.map((h) => normalizePerkName(perkName(h)));
+    if (!names.every((n) => available.has(n))) continue;
+    (e.trash ? trash : good).push({ entry: e, equipped: names.filter((n) => equipped.has(n)).length });
   }
-  const cap = (s: Set<string>) => [...s].slice(0, 3).map((n) => (n.length > 400 ? `${n.slice(0, 400)}…` : n));
-  if (bestGood) return { verdict: 'wishlist', matchedPerks: bestGood.perks.map(perkName), notes: cap(goodNotes) };
-  if (bestTrash) return { verdict: 'trash', matchedPerks: bestTrash.perks.map(perkName), notes: cap(trashNotes) };
+
+  const summarize = (verdict: Verdict, matches: { entry: WishlistEntry; equipped: number }[]): WishlistResult => {
+    // Best match first: most equipped perks, then the most specific entry. Stable, so file order breaks ties.
+    const ranked = [...matches].sort((a, b) => b.equipped - a.equipped || b.entry.perks.length - a.entry.perks.length);
+    const best = matches.reduce((a, b) => (b.entry.perks.length > a.entry.perks.length ? b : a));
+    const seen = new Set<string>();
+    const notes: WishlistNote[] = [];
+    let truncated = false;
+    for (const { entry } of ranked) {
+      if (!entry.notes || seen.has(entry.notes)) continue;
+      seen.add(entry.notes);
+      if (notes.length >= MAX_NOTES) {
+        truncated = true;
+        break;
+      }
+      const cut = !opts.fullNotes && entry.notes.length > NOTE_LIMIT;
+      if (cut) truncated = true;
+      notes.push({ source: entry.source, note: cut ? `${entry.notes.slice(0, NOTE_LIMIT)}…` : entry.notes });
+    }
+    return { verdict, matchedPerks: best.entry.perks.map(perkName), notes, truncated: truncated || undefined };
+  };
+  if (good.length) return summarize('wishlist', good);
+  if (trash.length) return summarize('trash', trash);
   return { verdict: 'not-on-wishlist' };
 }
 

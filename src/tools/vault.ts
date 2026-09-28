@@ -58,7 +58,7 @@ export function registerVaultTools(server: McpServer, ctx: Context): void {
           kind: g.kind,
           copies: g.items.map(({ item, wishlist: w }) => ({
             ...briefItem(item, inv, defs),
-            wishlist: w ? { verdict: w.verdict, matchedPerks: w.matchedPerks, notes: w.notes?.[0] } : undefined,
+            wishlist: w ? { verdict: w.verdict, matchedPerks: w.matchedPerks, notes: shortNote(w.notes?.[0]?.note) } : undefined,
           })),
         })),
       });
@@ -107,26 +107,29 @@ export function registerVaultTools(server: McpServer, ctx: Context): void {
         item: z.string().optional().describe('Item id or unique name; omit to check all weapons'),
         verdict: z.enum(['wishlist', 'trash', 'not-on-wishlist', 'unknown']).optional().describe('Only return weapons with this verdict'),
         refresh: z.boolean().optional().describe('Re-download the wishlist now (otherwise cached for 24h)'),
+        fullNotes: z.boolean().optional().describe('With item: return notes uncut (by default each note is capped at 1200 characters)'),
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional().describe('Default 50'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ item: ref, verdict, refresh, offset, limit }) => {
+    safe(async ({ item: ref, verdict, refresh, fullNotes, offset, limit }) => {
       const inv = await ctx.profile.inventory();
       const defs = await ctx.manifest.load();
       const wishlist = await ctx.wishlist.get(refresh ?? false);
       const weapons = ref ? [resolveItem(inv, ref)] : inv.items.filter((i) => i.kind === 'weapon' && i.instanceId);
       const rated = weapons
-        .map((w) => ({ item: w, result: evaluateRoll(w, wishlist, defs) }))
+        .map((w) => ({ item: w, result: evaluateRoll(w, wishlist, defs, { fullNotes: !!ref && fullNotes }) }))
         .filter((r) => !verdict || r.result.verdict === verdict)
         .sort((a, b) => a.item.name.localeCompare(b.item.name));
       const page = paginate(rated, offset ?? 0, limit ?? 50);
       return ok({
-        wishlist: { title: wishlist.title, entries: wishlist.size },
+        wishlist: { title: wishlist.title, source: ctx.config.wishlistUrl, entries: wishlist.size },
         ...page,
         items: page.items.map(({ item, result }) => ({ ...briefItem(item, inv, defs), ...result })),
       });
     }),
   );
 }
+
+const shortNote = (note: string | undefined) => (note && note.length > 200 ? `${note.slice(0, 200)}…` : note);
