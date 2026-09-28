@@ -3,7 +3,7 @@ import type { DestinyEquipableItemSetDefinition, DestinyInventoryItemDefinition 
 import { z } from 'zod';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../inventory/constants.js';
-import { locationLabel, namedStats, statTotal, type Item } from '../inventory/model.js';
+import { locationLabel, namedStats, statTotal, type ArmorDetails, type Item } from '../inventory/model.js';
 import { describeSubclass } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
 import { CHAMPION_NAMES, itemChampions, loadOverrides } from '../builds/champions.js';
@@ -367,6 +367,27 @@ function describeDefinition(def: DestinyInventoryItemDefinition, defs: Defs) {
   return out;
 }
 
+/** A weapon's perk columns (1-based, in socket order) with the equipped perk and every option with its description. */
+export function weaponPerkInfo(item: Item, defs: Defs) {
+  return (item.weapon?.perks ?? []).map((c, i) => ({
+    column: i + 1,
+    type: defs.item(c.equipped.hash)?.itemTypeDisplayName || undefined,
+    equipped: c.equipped.name,
+    options: c.options.map((o) => plugInfo(defs, o.hash)),
+  }));
+}
+
+/** Armor stats rolled, without mods and fully masterworked. */
+export function armorStatInfo(a: ArmorDetails, defs: Defs) {
+  return {
+    rolled: namedStats(a.base, defs),
+    withoutMods: namedStats(a.noMods, defs),
+    fullyMasterworked: namedStats(a.masterworked, defs),
+    totalWithoutMods: statTotal(a.noMods),
+    totalMasterworked: statTotal(a.masterworked),
+  };
+}
+
 function itemDetails(item: Item, defs: Defs, location: string) {
   const out: Record<string, unknown> = {
     id: item.instanceId,
@@ -392,10 +413,7 @@ function itemDetails(item: Item, defs: Defs, location: string) {
     out.element = w.element;
     out.ammo = w.ammo;
     if (w.intrinsic) out.frame = plugInfo(defs, w.intrinsic.hash);
-    out.perks = w.perks.map((c) => ({
-      equipped: c.equipped.name,
-      options: c.options.map((o) => plugInfo(defs, o.hash)),
-    }));
+    out.perks = weaponPerkInfo(item, defs);
     if (w.masterwork) out.masterwork = w.masterwork.name;
     if (w.mod) out.mod = plugInfo(defs, w.mod.hash);
   }
@@ -403,12 +421,7 @@ function itemDetails(item: Item, defs: Defs, location: string) {
     const a = item.armor;
     out.archetype = a.archetype;
     if (a.intrinsic) out.intrinsic = plugInfo(defs, a.intrinsic.hash);
-    out.armorStats = {
-      rolled: namedStats(a.base, defs),
-      withoutMods: namedStats(a.noMods, defs),
-      fullyMasterworked: namedStats(a.masterworked, defs),
-      totalWithoutMods: statTotal(a.noMods),
-    };
+    out.armorStats = armorStatInfo(a, defs);
     if (a.tuning) out.tuning = plugInfo(defs, a.tuning.hash);
     out.mods = a.mods.map((m) => plugInfo(defs, m.hash));
     if (a.energy) out.energy = a.energy;

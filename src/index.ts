@@ -7,6 +7,7 @@ import { registerAccountTools } from './tools/account.js';
 import { registerBriefTools } from './tools/brief.js';
 import { registerActionTools } from './tools/actions.js';
 import { registerBuildTools } from './tools/builds.js';
+import { registerCompareTools } from './tools/compare.js';
 import { registerHistoryTools } from './tools/history.js';
 import { registerInventoryTools } from './tools/inventory.js';
 import { registerLoadoutTools } from './tools/loadouts.js';
@@ -20,7 +21,7 @@ import { registerWorldTools } from './tools/world.js';
 
 const INSTRUCTIONS = `guardjin connects to the user's Destiny 2 account through the Bungie API.
 - Start a Destiny conversation with session_brief: one call for characters, gear, currencies, the week's activities, Xûr and what changed since last time.
-- Item ids returned by search tools are stable instance ids; pass them to other tools.
+- Item ids returned by search tools are stable instance ids; pass them to other tools. Refer to one of several copies by its \`label\`, and use compare_items to compare copies or rolls.
 - Armor uses Armor 3.0 stats (Weapons, Health, Class, Grenade, Super, Melee; 0-200 each).
 - For builds, gather context (get_equipped_loadout, get_subclass_options, get_artifact, exotics via search_inventory) before running optimize_armor, and only recommend gear the user owns unless asked otherwise. Use champion_coverage for Barrier/Overload/Unstoppable questions (champion types come from hidden weapon traits that item text doesn't show), plan_activity to prepare for a specific Nightfall/Portal/dungeon/raid, and export_build/audit_build to save a build as a spec and check it later.
 - get_quests lists quests and bounties with objective progress; use it for "what should I work on" or "which bounties are done". get_weekly_activities and get_vendor cover what is available this week; search_collectibles and search_triumphs cover what is missing or closest to done; get_recent_activities, get_activity_report, get_career_stats, get_activity_clears and get_weapon_stats cover past performance; get_progression, get_currencies and get_craftables cover account progress. Bungie's data can lag a write by a minute or more: get_character and get_item_details read live, and get_current_activity says whether gear changes are likely to be accepted.
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
 
   registerAccountTools(server, ctx);
   registerInventoryTools(server, ctx);
+  registerCompareTools(server, ctx);
   registerBuildTools(server, ctx);
   registerVaultTools(server, ctx);
   registerActionTools(server, ctx);

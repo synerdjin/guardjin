@@ -77,6 +77,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `list_characters` | Characters with class, power, subclass and stat totals |
 | `search_inventory` | Filters gear by name, slot, class, rarity, location, perk, element, min stats and tier; each result has a `label` (power, tier, standout perks or armor stats) that tells copies apart |
 | `get_item_details` | Perks with descriptions and options, mods, masterwork, rolled/no-mod/masterworked stats, set bonus, champion type |
+| `compare_items` | 2–6 weapons or armor pieces (or every owned copy of one item) side by side: aligned stat rows with the best marked, perks per column, and the differences, referring to each copy by its label |
 | `get_equipped_loadout` | A character's equipped gear, subclass setup, artifact perks, stats and active set bonuses |
 | `get_artifact` | A character's artifacts, the equipped one's active perks, and every perk option by tier |
 | `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
