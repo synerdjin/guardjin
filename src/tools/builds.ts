@@ -6,10 +6,11 @@ import { optimizeArmor, type ArmorCandidate } from '../builds/optimizer.js';
 import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampionWeapons } from '../builds/champions.js';
 import { auditBuild, BuildSpecSchema, exportBuild } from '../builds/spec.js';
 import { expandHome } from '../config.js';
+import { matchByName } from '../names.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, STAT_CAP } from '../inventory/constants.js';
 import { locationLabel, namedStats, type Item } from '../inventory/model.js';
-import { describeSubclass, subclassStatBonus } from '../inventory/subclass.js';
+import { describeSubclass, findSubclass, planSubclassSetup } from '../inventory/subclass.js';
 import { activeSetBonuses } from './inventory.js';
 import { READ_ONLY, UserError, briefItem, ok, resolveCharacter, resolveItems, safe, slotIndex, statKeyNames, statMapSchema, statMapToVector } from './util.js';
 
@@ -22,7 +23,9 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         'Finds the best 5-piece armor combinations from armor you own (vault + all characters) for a character. ' +
         'Supports a required exotic, stat minimums (0-200), stat priorities, and armor-set requirements (e.g. 2 or 4 pieces of a set for its bonus). ' +
         'Stat mods (+10 major or +5 minor, one per piece) are used first to reach minimums, then on the highest-priority stats. ' +
-        "The equipped subclass's fragment stat bonuses are included by default. Use get_subclass_options and search_inventory first to decide on an exotic and stat goals.",
+        "The equipped subclass's aspect and fragment stat bonuses are included by default. To plan a setup you haven't equipped, pass `aspects` and/or `fragments` (and `subclass` if it isn't the equipped one): " +
+        'their stat bonuses replace the equipped ones, and the result warns when the fragments exceed the slots the aspects open. A list you leave out stays as equipped. ' +
+        'Use get_subclass_options and search_inventory first to decide on an exotic and stat goals.',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name (titan/hunter/warlock); default is the most recently played'),
         exotic: z.string().optional().describe('"any" (default: best of all exotics, at most one), "none", or an exotic armor name/hash you own'),
@@ -36,7 +39,10 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
           .describe('Set-bonus requirements, e.g. [{"name": "Techsec", "pieces": 4}]'),
         assumeMasterwork: z.boolean().optional().describe('Treat every piece as fully masterworked (default true)'),
         statMods: z.enum(['major', 'minor', 'none']).optional().describe('Stat mods allowed per piece (default major = +10)'),
-        includeSubclassBonus: z.boolean().optional().describe("Add the equipped subclass's fragment stat bonuses (default true)"),
+        includeSubclassBonus: z.boolean().optional().describe("Add the subclass's aspect and fragment stat bonuses (default true)"),
+        subclass: z.string().optional().describe('Subclass to plan with (name or element, e.g. "Nightstalker", "Void", "Prismatic"); default is the equipped one'),
+        aspects: z.array(z.string()).max(5).optional().describe('Aspects to plan with instead of the equipped ones'),
+        fragments: z.array(z.string()).max(12).optional().describe('Fragments to plan with instead of the equipped ones, e.g. ["Echo of Leeching", "Echo of Starvation"]'),
         results: z.number().int().min(1).max(10).optional().describe('Number of combinations to return (default 3)'),
       },
       annotations: READ_ONLY,
@@ -58,11 +64,9 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
       if (exoticArg && exoticArg.toLowerCase() !== 'any') {
         if (exoticArg.toLowerCase() === 'none') exotic = 'none';
         else {
-          const q = exoticArg.toLowerCase();
-          const matches = armor.filter((i) => i.isExotic && (String(i.hash) === exoticArg || i.name.toLowerCase().includes(q)));
-          const distinct = [...new Map(matches.map((m) => [m.hash, m])).values()];
-          const exact = distinct.filter((m) => m.name.toLowerCase() === q);
-          const pick = exact.length === 1 ? exact : distinct;
+          const exotics = [...new Map(armor.filter((i) => i.isExotic).map((m) => [m.hash, m])).values()];
+          const byHash = exotics.filter((m) => String(m.hash) === exoticArg);
+          const pick = byHash.length ? byHash : matchByName(exotics, (m) => m.name, exoticArg);
           if (!pick.length) throw new UserError(`You don't own a ${character.classType} exotic matching "${exoticArg}".`);
           if (pick.length > 1) throw new UserError(`"${exoticArg}" matches several exotics: ${pick.map((m) => m.name).join(', ')}`);
           exotic = pick[0].hash;
@@ -78,13 +82,17 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         setRequirements.push({ setHash: owned[0].hash, pieces: s.pieces });
       }
 
-      const subclassItem = inv.items.find(
-        (i) => i.kind === 'subclass' && i.equipped && i.location.type === 'character' && i.location.characterId === character.id,
-      );
-      const bonus =
+      const planned = !!(args.aspects || args.fragments);
+      if (planned && args.includeSubclassBonus === false) throw new UserError('aspects and fragments only matter with the subclass bonus; drop includeSubclassBonus: false or the aspects/fragments.');
+      const subclassItem = findSubclass(inv, defs, character.id, args.subclass);
+      if (args.subclass && !subclassItem) throw new UserError(`No subclass matching "${args.subclass}" on your ${character.className}.`);
+      if (planned && !subclassItem) throw new UserError('No subclass to plan aspects or fragments with; pass `subclass`.');
+      const setup =
         args.includeSubclassBonus === false || !subclassItem
-          ? ARMOR_STATS.map(() => 0)
-          : subclassStatBonus(describeSubclass(subclassItem, inv, defs, false), defs);
+          ? undefined
+          : planSubclassSetup(describeSubclass(subclassItem, inv, defs, planned && ['ASPECTS', 'FRAGMENTS']), defs, character.classType, { aspects: args.aspects, fragments: args.fragments });
+      const bonus = setup?.bonus ?? ARMOR_STATS.map(() => 0);
+      const bonusFrom = setup && [...setup.aspects, ...setup.fragments].filter((p) => p.statBonuses).map((p) => ({ plug: p.name, stats: p.statBonuses! }));
 
       const candidates: ArmorCandidate[] = armor.map((i) => ({
         id: i.instanceId!,
@@ -114,7 +122,10 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         character: `${character.className} (${character.id})`,
         exotic: typeof exotic === 'number' ? armor.find((a) => a.hash === exotic)?.name : exotic,
         subclass: subclassItem?.name,
+        plannedSetup: setup && planned ? { aspects: setup.aspects.map((p) => p.name), fragments: setup.fragments.map((p) => p.name), fragmentSlots: setup.fragmentSlots } : undefined,
+        warning: setup?.warning,
         subclassStatBonus: bonus.some((b) => b !== 0) ? namedStats(bonus, defs) : undefined,
+        subclassStatBonusFrom: bonusFrom?.length ? bonusFrom : undefined,
         assumeMasterwork,
         statCap: STAT_CAP,
         searchMs: Date.now() - started,

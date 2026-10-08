@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../inventory/constants.js';
 import { locationLabel, namedStats, statTotal, type ArmorDetails, type Item } from '../inventory/model.js';
-import { describeSubclass } from '../inventory/subclass.js';
+import { describeSubclass, SUBCLASS_STAT_PLUG, subclassPlugStats } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
 import { CHAMPION_NAMES, itemChampions, loadOverrides } from '../builds/champions.js';
 import { artifactOptions, characterArtifacts, describeArtifact } from '../progress/artifact.js';
@@ -356,6 +356,8 @@ function describeDefinition(def: DestinyInventoryItemDefinition, defs: Defs) {
   const set = setHash ? defs.itemSet(setHash) : undefined;
   if (set) out.setBonus = describeSet(set, defs);
   // Stat changes matter for mods and fragments; on armor/weapon definitions they are placeholders.
+  // Aspects and fragments: every listed stat applies (conditional flags included); see plugStatBonus.
+  if (SUBCLASS_STAT_PLUG.test(def.plug?.plugCategoryIdentifier ?? '')) return { ...out, ...subclassPlugStats(def, defs, out.class as string | undefined) };
   const stats: Record<string, number> = {};
   const statSources = def.itemType === ItemType.Armor || def.itemType === ItemType.Weapon ? [] : def.investmentStats ?? [];
   for (const s of statSources) {

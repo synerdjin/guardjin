@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { ARMOR_BUCKETS, ARMOR_STATS, ARMOR_STAT_KEYS, WEAPON_BUCKETS, type ArmorStatKey } from '../inventory/constants.js';
 import type { Character, InventoryModel, Item } from '../inventory/model.js';
-import { describeSubclass } from '../inventory/subclass.js';
+import { describeSubclass, findSubclass, sectionPlugs } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
+import { normName } from '../names.js';
 import { characterArtifacts, describeArtifact } from '../progress/artifact.js';
 import { CHAMPIONS, CHAMPION_NAMES, championCoverage, type Champion, type ChampionExtras } from './champions.js';
 
@@ -56,7 +57,7 @@ export type BuildSpec = z.infer<typeof BuildSpecSchema>;
 
 const armorSlotKey = (bucketHash: number): ArmorSlotKey | undefined => ARMOR_SLOT_KEYS[(ARMOR_BUCKETS as readonly number[]).indexOf(bucketHash)];
 const weaponSlotKey = (bucketHash: number) => WEAPON_SLOT_KEYS[(WEAPON_BUCKETS as readonly number[]).indexOf(bucketHash)];
-const lc = (s: string) => s.trim().toLowerCase();
+const lc = normName;
 export const EMPTYISH = /^(empty|default)\b/i;
 
 function equippedOn(inv: InventoryModel, characterId: string): Item[] {
@@ -69,8 +70,8 @@ export function characterStats(inv: InventoryModel, characterId: string): Record
   return Object.fromEntries(ARMOR_STATS.map((s) => [s.key, raw[s.hash] ?? 0])) as Record<ArmorStatKey, number>;
 }
 
-function subclassSection(sections: { category: string; equipped: { name: string }[] }[], category: string): string[] {
-  return sections.filter((s) => s.category.toUpperCase() === category).flatMap((s) => s.equipped.map((p) => p.name));
+function subclassSection(summary: Parameters<typeof sectionPlugs>[0], category: string): string[] {
+  return sectionPlugs(summary, category, 'equipped').map((p) => p.name);
 }
 
 /** Captures what a character has equipped as a build spec. */
@@ -90,10 +91,10 @@ export function exportBuild(inv: InventoryModel, defs: Defs, character: Characte
     class: character.classType === 'any' ? undefined : character.classType,
     subclass: summary && {
       name: summary.name,
-      super: subclassSection(summary.sections, 'SUPER')[0],
-      abilities: subclassSection(summary.sections, 'ABILITIES'),
-      aspects: subclassSection(summary.sections, 'ASPECTS'),
-      fragments: subclassSection(summary.sections, 'FRAGMENTS'),
+      super: subclassSection(summary, 'SUPER')[0],
+      abilities: subclassSection(summary, 'ABILITIES'),
+      aspects: subclassSection(summary, 'ASPECTS'),
+      fragments: subclassSection(summary, 'FRAGMENTS'),
     },
     exoticArmor: armor.find((a) => a.isExotic)?.name,
     armor: {
@@ -146,9 +147,7 @@ export function auditBuild(inv: InventoryModel, defs: Defs, character: Character
   if (spec.subclass) {
     const want = spec.subclass;
     const current = equipped.find((i) => i.kind === 'subclass');
-    const target = lc(current?.name ?? '').includes(lc(want.name))
-      ? current
-      : inv.items.find((i) => i.kind === 'subclass' && i.location.type === 'character' && i.location.characterId === character.id && lc(i.name).includes(lc(want.name)));
+    const target = findSubclass(inv, defs, character.id, want.name);
     if (!target) issues.push({ area: 'subclass', message: `no ${want.name} subclass on this character` });
     else {
       if (target !== current) {
@@ -157,7 +156,7 @@ export function auditBuild(inv: InventoryModel, defs: Defs, character: Character
       }
       const summary = describeSubclass(target, inv, defs, false);
       const check = (category: string, wanted: string[] | undefined) => {
-        const haveNames = subclassSection(summary.sections, category);
+        const haveNames = subclassSection(summary, category);
         const have = haveNames.map(lc);
         for (const w of wanted ?? []) {
           if (have.includes(lc(w))) continue;
