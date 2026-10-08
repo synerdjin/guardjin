@@ -35,27 +35,64 @@ export interface StunRule {
   element: string;
   verb: string;
   pattern: RegExp;
+  /** Where a rule that isn't the game's own comes from (data/champion-overrides.json). */
+  note?: string;
 }
 
 export interface ChampionExtras {
   /** DIM extended-breaker: item hash → breaker type hash. */
   extendedBreaker?: Record<string, number>;
-  /** Hand-maintained overrides: item hash → champion or "none". */
-  overrides?: Record<string, Champion | 'none'>;
+  /** Hand-maintained corrections from data/champion-overrides.json (see loadOverrides). */
+  overrides?: ChampionOverrides;
 }
 
-let overridesCache: Record<string, Champion | 'none'> | undefined;
+/** A hand-maintained claim with where it comes from. */
+export interface ChampionOverride<T = Champion> {
+  champion: T;
+  note?: string;
+}
 
-/** data/champion-overrides.json from the project folder (same relative path from src/ and dist/). */
-export function loadOverrides(): Record<string, Champion | 'none'> {
+/** data/champion-overrides.json: corrections to what the game data says, each with a note on its source. */
+export interface ChampionOverrides {
+  /** Item hash → champion type, or "none"; replaces everything else known about the item. */
+  items?: Record<string, ChampionOverride<Champion | 'none'>>;
+  /** Plug hash → champion type granted to every item rolled with the plug (e.g. Chill Clip). */
+  plugs?: Record<string, ChampionOverride>;
+  /** Stun verbs the game's triumph text doesn't list (e.g. freeze), matched in ability and perk text. */
+  verbs?: StunRule[];
+}
+
+const OVERRIDES_FILE = 'data/champion-overrides.json';
+let overridesCache: ChampionOverrides | undefined;
+
+const championNamed = (value: unknown): Champion | undefined => (typeof value === 'string' ? WORD[value.toLowerCase()] : undefined);
+
+/** data/champion-overrides.json from the project folder (same relative path from src/ and dist/); malformed entries are skipped. */
+export function loadOverrides(): ChampionOverrides {
   if (overridesCache) return overridesCache;
+  const out: Required<ChampionOverrides> = { items: {}, plugs: {}, verbs: [] };
+  type Entry = { champion?: unknown; note?: string } | string;
+  // An entry is { champion, note } or just the champion name.
+  const entry = (e: Entry) => (typeof e === 'string' ? { champion: e, note: undefined } : e);
   try {
-    const file = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'data', 'champion-overrides.json');
-    overridesCache = (JSON.parse(readFileSync(file, 'utf8')) as { items?: Record<string, Champion | 'none'> }).items ?? {};
+    const file = join(dirname(fileURLToPath(import.meta.url)), '..', '..', OVERRIDES_FILE);
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { items?: Record<string, Entry>; plugs?: Record<string, Entry>; verbs?: { champion?: unknown; note?: string; element?: string; verb?: string }[] };
+    for (const [hash, e] of Object.entries(raw.items ?? {}).map(([h, e]) => [h, entry(e)] as const)) {
+      const champion = e.champion === 'none' ? 'none' : championNamed(e.champion);
+      if (champion) out.items[hash] = { champion, note: e.note };
+    }
+    for (const [hash, e] of Object.entries(raw.plugs ?? {}).map(([h, e]) => [h, entry(e)] as const)) {
+      const champion = championNamed(e.champion);
+      if (champion) out.plugs[hash] = { champion, note: e.note };
+    }
+    for (const v of raw.verbs ?? []) {
+      const champion = championNamed(v.champion);
+      if (champion && v.element && v.verb) out.verbs.push({ champion, element: v.element, verb: v.verb, pattern: verbPattern(v.verb, false), note: v.note });
+    }
   } catch {
-    overridesCache = {};
+    // no file: no overrides
   }
-  return overridesCache;
+  return (overridesCache = out);
 }
 
 /** Champion types a text grants: "Strong against [Stagger] Unstoppable Champions", "stun Barrier Champions". */
@@ -114,13 +151,13 @@ export function stunRules(defs: Defs): StunRule[] {
 }
 
 /**
- * Matches the verb's own forms ("suppressed", "ignites", "jolt") but not look-alikes such as "slower",
+ * Matches the verb's own forms ("suppressed", "ignites", "jolt", "freezing") but not look-alikes such as "slower",
  * "slowly", "slow-moving" or "shatter into"; "volatile rounds" must be the phrase, since a volatile
  * target is not the same as volatile rounds.
  */
 function verbPattern(word: string, rounds: boolean): RegExp {
   if (rounds) return new RegExp(`\\b${word.replace(/ing$/, '')}(?:ing)? rounds\\b`, 'i');
-  const base = word.replace(/(ion|ing)$/, '');
+  const base = word.replace(/(ion|ing|e)$/, '');
   return new RegExp(`\\b${base}(?:e|es|s|ed|ing|ion|ions)?\\b(?!-|\\s+into\\b)`, 'i');
 }
 
@@ -158,9 +195,9 @@ export function itemChampions(inv: InventoryModel, defs: Defs, item: Item, extra
   const add = (s: ChampionSource) => {
     if (!out.some((o) => o.champion === s.champion && o.via === s.via)) out.push(s);
   };
-  const override = extras.overrides?.[String(item.hash)];
-  if (override === 'none') return [];
-  if (override) return [{ champion: override, kind: 'override', via: item.name, confidence: 'high', note: 'data/champion-overrides.json' }];
+  const override = extras.overrides?.items?.[String(item.hash)];
+  if (override?.champion === 'none') return [];
+  if (override) return [{ champion: override.champion, kind: 'override', via: item.name, confidence: 'high', note: override.note ?? OVERRIDES_FILE }];
 
   const def = defs.item(item.hash);
   const own = (def?.breakerTypeHash && BREAKER_HASH[def.breakerTypeHash]) || (def?.breakerType && BREAKER_ENUM[def.breakerType]);
@@ -172,7 +209,10 @@ export function itemChampions(inv: InventoryModel, defs: Defs, item: Item, extra
     const cat = plug.plug?.plugCategoryIdentifier ?? '';
     if (/shader|ornament|tracker|masterwork|memento/i.test(cat)) continue;
     const kind: ChampionSourceKind = item.kind === 'armor' ? 'exotic-armor' : cat === 'intrinsics' ? 'frame' : 'perk';
-    for (const c of plugChampions(defs, plug)) add({ champion: c, kind, via: `${item.name}: ${plug.displayProperties.name}`, confidence: 'high' });
+    const via = `${item.name}: ${plug.displayProperties.name}`;
+    for (const c of plugChampions(defs, plug)) add({ champion: c, kind, via, confidence: 'high' });
+    const granted = extras.overrides?.plugs?.[String(plug.hash)];
+    if (granted) add({ champion: granted.champion, kind: 'override', via, confidence: 'high', note: granted.note ?? OVERRIDES_FILE });
   }
   return out;
 }
@@ -191,19 +231,21 @@ function itemVerbSources(inv: InventoryModel, defs: Defs, item: Item, rules: Stu
         kind: item.kind === 'armor' ? 'exotic-armor' : 'perk',
         via: `${item.name}: ${plug.displayProperties.name}`,
         confidence: 'medium',
-        note: `mentions "${r.verb}" (${r.element}); stuns if that effect lands on the champion`,
+        note: verbNote(r),
       });
     }
   }
   return out;
 }
 
+const verbNote = (r: StunRule) => `mentions "${r.verb}" (${r.element}); stuns if that effect lands on the champion${r.note ? ` (${r.note})` : ''}`;
+
 function subclassSources(plugs: SubclassPlug[], rules: StunRule[], kind: ChampionSourceKind, prefix = ''): ChampionSource[] {
   const out: ChampionSource[] = [];
   for (const p of plugs) {
     for (const c of championsInText(p.description)) out.push({ champion: c, kind, via: `${prefix}${p.name}`, confidence: 'high' });
     for (const r of verbsInText(p.description, rules)) {
-      out.push({ champion: r.champion, kind, via: `${prefix}${p.name}`, confidence: 'medium', note: `mentions "${r.verb}" (${r.element}); stuns if that effect lands on the champion` });
+      out.push({ champion: r.champion, kind, via: `${prefix}${p.name}`, confidence: 'medium', note: verbNote(r) });
     }
   }
   return out;
@@ -220,7 +262,7 @@ export function championCoverage(
   defs: Defs,
   opts: { items: Item[]; character?: Character; extras?: ChampionExtras },
 ): CoverageReport {
-  const rules = stunRules(defs);
+  const rules = [...stunRules(defs), ...(opts.extras?.overrides?.verbs ?? [])];
   const sources: ChampionSource[] = [];
   for (const item of opts.items) {
     if (item.kind !== 'weapon' && !(item.kind === 'armor' && item.isExotic)) continue;

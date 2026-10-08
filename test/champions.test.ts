@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { championCoverage, championsInText, itemChampions, plugChampions, stunRules, verbsInText } from '../src/builds/champions.js';
+import { championCoverage, championsInText, itemChampions, loadOverrides, plugChampions, stunRules, verbsInText } from '../src/builds/champions.js';
 import type { InventoryModel } from '../src/inventory/model.js';
-import { fixtureDefs, makeInventory, makeItem } from './helpers.js';
+import { defsFrom, fixtureDefs, makeInventory, makeItem, withHashes } from './helpers.js';
 
 const defs = fixtureDefs();
 const AGGRESSIVE_FRAME = 2159352803; // hidden "[Stagger] Unstoppable" perk
@@ -49,6 +49,16 @@ describe('stunRules', () => {
     expect(verbs('Nova Bomb travels slowly. Detonations shatter into smaller seeker projectiles.')).toEqual([]);
     expect(verbs('Detonates near a target, making them volatile.')).toEqual([]);
   });
+
+  it('counts freezing as an Unstoppable stun with the overrides file, but not perks that only react to frozen targets', () => {
+    const freeze = loadOverrides().verbs!.find((r) => r.verb === 'freeze')!;
+    expect(freeze).toMatchObject({ champion: 'unstoppable', element: 'Stasis' });
+    const verbs = (t: string) => verbsInText(t, [...rules, freeze]).map((r) => r.verb);
+    expect(verbs('Direct hits with Stasis arrows freeze combatants and slow opposing Guardians.')).toEqual(['slow', 'freeze']);
+    expect(verbs('Landing nearly all Stasis pellets will freeze targets.')).toEqual(['freeze']);
+    expect(verbs('Freezes the target in a block of ice.')).toEqual(['freeze']);
+    expect(verbs('Defeating a frozen target with this weapon grants you Frost Armor.')).toEqual([]);
+  });
 });
 
 describe('plugChampions', () => {
@@ -56,6 +66,33 @@ describe('plugChampions', () => {
     expect(plugChampions(defs, defs.item(AGGRESSIVE_FRAME))).toEqual(['unstoppable']);
     expect(plugChampions(defs, defs.item(RAPID_FIRE_FRAME))).toEqual(['overload']);
     expect(plugChampions(defs, defs.item(EXTENDED_MAG))).toEqual([]);
+  });
+});
+
+describe('plug overrides', () => {
+  const CHILL_CLIP = 2978966579;
+  const GUN = 9001;
+  const mini = defsFrom({
+    DestinyInventoryItemDefinition: withHashes({
+      [GUN]: { displayProperties: { name: 'Test Gun', description: '' } },
+      [CHILL_CLIP]: { displayProperties: { name: 'Chill Clip', description: 'Direct hits cause a detonation that slows nearby targets.' }, plug: { plugCategoryIdentifier: 'frames' } },
+    }),
+  });
+  const gun = makeItem({ kind: 'weapon', hash: GUN, name: 'Test Gun', instanceId: 'gun1' });
+  const inv = withSockets([gun], { gun1: [CHILL_CLIP] });
+
+  it('grants the champion to every item rolled with the plug, marked as an override with its note', () => {
+    const overrides = { plugs: { [CHILL_CLIP]: { champion: 'unstoppable' as const, note: 'confirmed in play' } } };
+    const report = championCoverage(inv, mini, { items: [gun], extras: { overrides } });
+    expect(report.champions.unstoppable.by).toEqual([{ champion: 'unstoppable', kind: 'override', via: 'Test Gun: Chill Clip', confidence: 'high', note: 'confirmed in play' }]);
+    expect(championCoverage(inv, mini, { items: [gun] }).champions.unstoppable.covered).toBe(false);
+  });
+
+  it('ships Chill Clip and its enhanced version in the overrides file', () => {
+    const plugs = loadOverrides().plugs!;
+    expect(plugs['2978966579']?.champion).toBe('unstoppable');
+    expect(plugs['344235611']?.champion).toBe('unstoppable');
+    expect(plugChampions(mini, mini.item(CHILL_CLIP))).toEqual([]);
   });
 });
 
@@ -73,7 +110,7 @@ describe('championCoverage', () => {
       ['One Small Step: Voltshot', 'medium'],
     ]);
 
-    expect(itemChampions(inv, defs, shotgun, { overrides: { 222: 'barrier' } })).toEqual([
+    expect(itemChampions(inv, defs, shotgun, { overrides: { items: { 222: { champion: 'barrier' } } } })).toEqual([
       { champion: 'barrier', kind: 'override', via: 'One Small Step', confidence: 'high', note: 'data/champion-overrides.json' },
     ]);
     expect(itemChampions(inv, defs, shotgun, { extendedBreaker: { 222: 485622768 } }).map((s) => s.champion)).toEqual(['barrier', 'overload']);
