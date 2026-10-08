@@ -23,7 +23,7 @@ export async function publicVendorOffers(http: HttpClient, defs: Defs): Promise<
     const refreshes = pub.vendors?.data?.[vendorHash as unknown as number]?.nextRefreshDate;
     for (const s of Object.values(sales.saleItems ?? {})) {
       if (!s.itemHash) continue;
-      const cost = s.costs?.length ? s.costs.map((c) => `${defs.item(c.itemHash)?.displayProperties.name ?? `#${c.itemHash}`}${c.quantity > 1 ? ` x${c.quantity}` : ''}`) : undefined;
+      const cost = costText(defs, s.costs ?? []);
       const list = out.get(s.itemHash) ?? [];
       if (!list.some((o) => o.vendorHash === Number(vendorHash))) list.push({ vendor, vendorHash: Number(vendorHash), cost, refreshes });
       out.set(s.itemHash, list);
@@ -38,3 +38,7 @@ export function vendorPresent(offers: Map<number, VendorOffer[]>, name: string):
   for (const list of offers.values()) if (list.some((o) => o.vendor.toLowerCase().includes(n))) return true;
   return false;
 }
+
+/** "Glimmer x5000"-style names for a sale's costs, or undefined when it has none. */
+export const costText = (defs: Defs, costs: { itemHash: number; quantity: number }[]) =>
+  costs.length ? costs.map((c) => `${defs.item(c.itemHash)?.displayProperties.name ?? `#${c.itemHash}`}${c.quantity > 1 ? ` x${c.quantity}` : ''}`) : undefined;

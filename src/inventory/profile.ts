@@ -1,5 +1,5 @@
 import type { HttpClient } from 'bungie-api-ts/http';
-import { DestinyComponentType, getItem, getProfile, type DestinyProfileResponse } from 'bungie-api-ts/destiny2';
+import { DestinyComponentType, getItem, getProfile, getVendor, type DestinyProfileResponse, type DestinyVendorSaleItemComponent } from 'bungie-api-ts/destiny2';
 import type { AccountService } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
 import type { Defs } from '../manifest/defs.js';
@@ -12,6 +12,8 @@ const TTL_MS = 30_000;
  * state meanwhile), so writes we made ourselves are overlaid on reads for this long.
  */
 const WRITE_OVERLAY_MS = 5 * 60_000;
+/** Vendor stock read per character (e.g. which aspects are bought) only changes when the player buys something. */
+const VENDOR_TTL_MS = 2 * 60_000;
 
 interface RecentWrites {
   at: number;
@@ -41,6 +43,7 @@ export class ProfileService {
   private cached: { at: number; model: InventoryModel } | undefined;
   private inflight: Promise<InventoryModel> | undefined;
   private readonly recentWrites = new Map<string, RecentWrites>();
+  private readonly vendorSales = new Map<string, { at: number; sales: Promise<DestinyVendorSaleItemComponent[]> }>();
   /** Called after every fresh inventory read (used to record local history). Errors are logged, not thrown. */
   onFetch?: (model: InventoryModel, defs: Defs) => void;
 
@@ -61,6 +64,28 @@ export class ProfileService {
   /** Call after any write action so the next read sees fresh data. */
   invalidate(): void {
     this.cached = undefined;
+    this.vendorSales.clear();
+  }
+
+  /**
+   * A character's sale entries at one vendor, cached for a few minutes and shared by concurrent
+   * callers. A failed fetch is not cached. `fresh` skips the cache (e.g. right after a purchase).
+   */
+  characterVendorSales(characterId: string, vendorHash: number, fresh = false): Promise<DestinyVendorSaleItemComponent[]> {
+    const key = `${characterId}:${vendorHash}`;
+    const hit = this.vendorSales.get(key);
+    if (!fresh && hit && Date.now() - hit.at < VENDOR_TTL_MS) return hit.sales;
+    const sales = this.account.get().then(async (account) => {
+      const r = await unwrap(
+        getVendor(this.http, { membershipType: account.membershipType, destinyMembershipId: account.membershipId, characterId, vendorHash, components: [DestinyComponentType.VendorSales] }),
+      );
+      return Object.values(r.sales?.data ?? {});
+    });
+    this.vendorSales.set(key, { at: Date.now(), sales });
+    sales.catch(() => {
+      if (this.vendorSales.get(key)?.sales === sales) this.vendorSales.delete(key);
+    });
+    return sales;
   }
 
   /**

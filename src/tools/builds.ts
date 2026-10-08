@@ -7,10 +7,11 @@ import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampi
 import { auditBuild, BuildSpecSchema, exportBuild } from '../builds/spec.js';
 import { expandHome } from '../config.js';
 import { matchByName } from '../names.js';
+import { loadSubclassOwnership } from '../world/subclassVendors.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, STAT_CAP } from '../inventory/constants.js';
 import { locationLabel, namedStats, type Item } from '../inventory/model.js';
-import { describeSubclass, findSubclass, planSubclassSetup } from '../inventory/subclass.js';
+import { describeSubclass, findSubclass, planSubclassSetup, type PlannedSubclassSetup } from '../inventory/subclass.js';
 import { activeSetBonuses } from './inventory.js';
 import { READ_ONLY, UserError, briefItem, ok, resolveCharacter, resolveItems, safe, slotIndex, statKeyNames, statMapSchema, statMapToVector } from './util.js';
 
@@ -87,10 +88,12 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
       const subclassItem = findSubclass(inv, defs, character.id, args.subclass);
       if (args.subclass && !subclassItem) throw new UserError(`No subclass matching "${args.subclass}" on your ${character.className}.`);
       if (planned && !subclassItem) throw new UserError('No subclass to plan aspects or fragments with; pass `subclass`.');
-      const setup =
-        args.includeSubclassBonus === false || !subclassItem
-          ? undefined
-          : planSubclassSetup(describeSubclass(subclassItem, inv, defs, planned && ['ASPECTS', 'FRAGMENTS']), defs, character.classType, { aspects: args.aspects, fragments: args.fragments });
+      let setup: PlannedSubclassSetup | undefined;
+      if (args.includeSubclassBonus !== false && subclassItem) {
+        const ownership = planned ? await loadSubclassOwnership(ctx.profile, defs, character.id, subclassItem) : undefined;
+        const summary = describeSubclass(subclassItem, inv, defs, planned && ['ASPECTS', 'FRAGMENTS'], ownership);
+        setup = planSubclassSetup(summary, defs, character.classType, { aspects: args.aspects, fragments: args.fragments });
+      }
       const bonus = setup?.bonus ?? ARMOR_STATS.map(() => 0);
       const bonusFrom = setup && [...setup.aspects, ...setup.fragments].filter((p) => p.statBonuses).map((p) => ({ plug: p.name, stats: p.statBonuses! }));
 
@@ -123,6 +126,7 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         exotic: typeof exotic === 'number' ? armor.find((a) => a.hash === exotic)?.name : exotic,
         subclass: subclassItem?.name,
         plannedSetup: setup && planned ? { aspects: setup.aspects.map((p) => p.name), fragments: setup.fragments.map((p) => p.name), fragmentSlots: setup.fragmentSlots } : undefined,
+        unowned: setup?.unowned,
         warning: setup?.warning,
         subclassStatBonus: bonus.some((b) => b !== 0) ? namedStats(bonus, defs) : undefined,
         subclassStatBonusFrom: bonusFrom?.length ? bonusFrom : undefined,

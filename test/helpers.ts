@@ -7,27 +7,32 @@ import { buildItemIndex, Defs } from '../src/manifest/defs.js';
 
 let cached: Defs | undefined;
 
-/** Real manifest definitions (a small extract) loaded into an in-memory SQLite DB shaped like Bungie's. */
-export function fixtureDefs(): Defs {
-  if (cached) return cached;
-  const data = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'manifest.json'), 'utf8')) as Record<string, Record<string, unknown>>;
+const TABLES = [
+  'DestinyInventoryItemDefinition', 'DestinyStatDefinition', 'DestinyInventoryBucketDefinition',
+  'DestinyEquipableItemSetDefinition', 'DestinySandboxPerkDefinition', 'DestinyDamageTypeDefinition',
+  'DestinyClassDefinition', 'DestinySocketCategoryDefinition', 'DestinyPlugSetDefinition', 'DestinyRaceDefinition',
+  'DestinyObjectiveDefinition', 'DestinyActivityDefinition', 'DestinyDestinationDefinition',
+  'DestinyMilestoneDefinition', 'DestinyVendorDefinition', 'DestinyCollectibleDefinition', 'DestinyRecordDefinition',
+  'DestinyLoadoutNameDefinition', 'DestinyActivityModifierDefinition', 'DestinySocketTypeDefinition', 'DestinyLoadoutConstantsDefinition',
+  'DestinyProgressionDefinition', 'DestinyFactionDefinition', 'DestinySeasonDefinition', 'DestinySeasonPassDefinition',
+  'DestinyPresentationNodeDefinition', 'DestinySocialCommendationDefinition', 'DestinySocialCommendationNodeDefinition', 'DestinyActivityModeDefinition', 'DestinyActivityTypeDefinition',
+];
+
+/** Definitions from `{ table: { hash: def } }`, loaded into an in-memory SQLite DB shaped like Bungie's. */
+export function defsFrom(data: Record<string, Record<string, unknown>>, version = 'fixture'): Defs {
   const db = new DatabaseSync(':memory:');
-  for (const table of [
-    'DestinyInventoryItemDefinition', 'DestinyStatDefinition', 'DestinyInventoryBucketDefinition',
-    'DestinyEquipableItemSetDefinition', 'DestinySandboxPerkDefinition', 'DestinyDamageTypeDefinition',
-    'DestinyClassDefinition', 'DestinySocketCategoryDefinition', 'DestinyPlugSetDefinition', 'DestinyRaceDefinition',
-    'DestinyObjectiveDefinition', 'DestinyActivityDefinition', 'DestinyDestinationDefinition',
-    'DestinyMilestoneDefinition', 'DestinyVendorDefinition', 'DestinyCollectibleDefinition', 'DestinyRecordDefinition',
-    'DestinyLoadoutNameDefinition', 'DestinyActivityModifierDefinition', 'DestinySocketTypeDefinition', 'DestinyLoadoutConstantsDefinition',
-    'DestinyProgressionDefinition', 'DestinyFactionDefinition', 'DestinySeasonDefinition', 'DestinySeasonPassDefinition',
-    'DestinyPresentationNodeDefinition', 'DestinySocialCommendationDefinition', 'DestinySocialCommendationNodeDefinition', 'DestinyActivityModeDefinition', 'DestinyActivityTypeDefinition',
-  ]) {
+  for (const table of TABLES) {
     db.exec(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY NOT NULL, json BLOB)`);
     const insert = db.prepare(`INSERT INTO ${table} (id, json) VALUES (?, ?)`);
     for (const [hash, def] of Object.entries(data[table] ?? {})) insert.run(Number(hash) | 0, JSON.stringify(def));
   }
   buildItemIndex(db);
-  cached = new Defs(db, 'fixture');
+  return new Defs(db, version);
+}
+
+/** Real manifest definitions (a small extract) loaded into an in-memory SQLite DB shaped like Bungie's. */
+export function fixtureDefs(): Defs {
+  cached ??= defsFrom(JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'manifest.json'), 'utf8')) as Record<string, Record<string, unknown>>);
   return cached;
 }
 

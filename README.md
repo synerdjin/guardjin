@@ -80,7 +80,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `compare_items` | 2–6 weapons or armor pieces (or every owned copy of one item) side by side: aligned stat rows with the best marked, perks per column, and the differences, referring to each copy by its label |
 | `get_equipped_loadout` | A character's equipped gear, subclass setup, artifact perks, stats and active set bonuses |
 | `get_artifact` | A character's artifacts, the equipped one's active perks, and every perk option by tier |
-| `get_subclass_options` | Unlocked supers, abilities, aspects and fragments, with descriptions and stat bonuses |
+| `get_subclass_options` | Unlocked supers and abilities, and every aspect and fragment with whether you have bought it (and the price if not), descriptions and stat bonuses; ownership comes from the Aspects and Fragments vendors (not available for Prismatic and Strand) |
 | `find_source` | Where an item comes from, whether you own/collected it, pattern status, and whether any vendor (Xûr included) sells it now |
 | `wanted_items` | A watch list of items you're hunting; `check` looks for them in every vendor's current stock |
 | `query_manifest` | One read-only SQL SELECT against the game database, with your inventory as `temp.owned_items` |

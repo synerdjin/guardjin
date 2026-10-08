@@ -174,6 +174,18 @@ export class Defs {
     return this.get<DestinyDestinationDefinition>('DestinyDestinationDefinition', hash);
   }
 
+  /** Every row of a table whose display name is exactly one of `names` (a full scan; cache the result). */
+  byName<T>(table: string, names: string[]): T[] {
+    try {
+      const rows = this.db
+        .prepare(`SELECT json FROM ${table} WHERE json_extract(CAST(json AS TEXT), '$.displayProperties.name') IN (${names.map(() => '?').join(', ')})`)
+        .all(...names) as { json: string | Uint8Array }[];
+      return rows.map((row) => JSON.parse(typeof row.json === 'string' ? row.json : decoder.decode(row.json)) as T);
+    } catch {
+      return [];
+    }
+  }
+
   /** Human-readable description for a plug: its own description, else its displayable sandbox perks. */
   describePlug(def: DestinyInventoryItemDefinition | undefined): string {
     if (!def) return '';
