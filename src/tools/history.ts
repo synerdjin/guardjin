@@ -156,11 +156,12 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
         type: z.enum(ACTIVITY_KINDS).optional().describe('Only this kind of activity'),
         minCompletions: z.number().int().min(0).optional().describe('Default 1'),
         sort: z.enum(['completions', 'fastest', 'name']).optional().describe('Default: completions'),
+        offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ query, type, minCompletions, sort, limit }) => {
+    safe(async ({ query, type, minCompletions, sort, offset, limit }) => {
       const [inv, defs, account] = await Promise.all([ctx.profile.inventory(), ctx.manifest.load(), ctx.account.get()]);
       const perCharacter = await Promise.all(
         inv.characters.map(async (c) =>
@@ -183,7 +184,7 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
             ? (a.fastestMs ?? Infinity) - (b.fastestMs ?? Infinity)
             : b.completions - a.completions || a.name.localeCompare(b.name),
       );
-      const page = paginate(rows, 0, limit ?? 30);
+      const page = paginate(rows, offset ?? 0, limit ?? 30);
       const cleared = new Set(rows.map((r) => baseActivityName(r.name)));
       return ok({
         ...page,
@@ -206,11 +207,12 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
         type: z.string().optional().describe('Substring of the weapon type, e.g. "Hand Cannon", "Sniper"'),
         minKills: z.number().int().min(0).optional().describe('Default 1'),
         sort: z.enum(['kills', 'precision']).optional().describe('Default: kills'),
+        offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(100).optional().describe('Default 25'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ query, type, minKills, sort, limit }) => {
+    safe(async ({ query, type, minKills, sort, offset, limit }) => {
       const [inv, defs, account] = await Promise.all([ctx.profile.inventory(), ctx.manifest.load(), ctx.account.get()]);
       const perCharacter = await Promise.all(
         inv.characters.map(async (c) =>
@@ -223,7 +225,7 @@ export function registerHistoryTools(server: McpServer, ctx: Context): void {
         (w) => w.kills >= (minKills ?? 1) && (!q || w.name.toLowerCase().includes(q)) && (!t || (w.type ?? '').toLowerCase().includes(t)),
       );
       rows.sort((a, b) => (sort === 'precision' ? b.precisionPercent - a.precisionPercent || b.kills - a.kills : b.kills - a.kills));
-      return ok(paginate(rows, 0, limit ?? 25));
+      return ok(paginate(rows, offset ?? 0, limit ?? 25));
     }),
   );
 }

@@ -56,6 +56,8 @@ export function buildCurrentActivity(
 }
 
 export interface AvailableActivity {
+  /** Stable across calls; several activities can share a name. */
+  activityHash: number;
   name: string;
   recommendedLight?: number;
   completed: boolean;
@@ -69,7 +71,7 @@ export function availableActivities(activities: DestinyCharacterActivitiesCompon
     const name = defs.activity(a.activityHash)?.displayProperties.name;
     if (!name || !a.isVisible) return [];
     const modifiers = [...new Set((a.modifierHashes ?? []).map((h) => defs.get<{ displayProperties?: { name?: string } }>('DestinyActivityModifierDefinition', h)?.displayProperties?.name ?? '').filter(Boolean))];
-    return [{ name, recommendedLight: a.recommendedLight || undefined, completed: a.isCompleted, canJoin: a.canJoin, modifiers }];
+    return [{ activityHash: a.activityHash, name, recommendedLight: a.recommendedLight || undefined, completed: a.isCompleted, canJoin: a.canJoin, modifiers }];
   });
 }
 

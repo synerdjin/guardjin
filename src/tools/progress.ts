@@ -96,11 +96,12 @@ export function registerProgressTools(server: McpServer, ctx: Context): void {
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring of the weapon name or type'),
         status: z.enum(['unlocked', 'locked', 'all']).optional().describe('Default: all'),
+        offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(200).optional().describe('Default 60'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ query, status, limit }) => {
+    safe(async ({ query, status, offset, limit }) => {
       const [profile, defs] = await Promise.all([ctx.profile.components([DestinyComponentType.Craftables]), ctx.manifest.load()]);
       const q = query?.trim().toLowerCase();
       const all = buildCraftables(profile, defs);
@@ -109,7 +110,7 @@ export function registerProgressTools(server: McpServer, ctx: Context): void {
           (!q || c.name.toLowerCase().includes(q) || (c.type ?? '').toLowerCase().includes(q)) &&
           (status === undefined || status === 'all' || (status === 'unlocked') === c.unlocked),
       );
-      const page = paginate(rows, 0, limit ?? 60);
+      const page = paginate(rows, offset ?? 0, limit ?? 60);
       return ok({ unlocked: all.filter((c) => c.unlocked).length, locked: all.filter((c) => !c.unlocked).length, ...page, items: page.items.map((c) => ({ ...c, reasons: c.reasons.length ? c.reasons : undefined })) });
     }),
   );
