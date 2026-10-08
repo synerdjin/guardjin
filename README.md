@@ -96,7 +96,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `triage_drops` | Applies your keep rules (`~/.guardjin/keep-rules.json`) to unlocked gear: keep (with ids to lock), dismantle, or review, with the rule behind each |
 | `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
-| `get_item_sockets` | An item's sockets with current plugs and their progress, and the options for one socket with unlock progress and why blocked ones can't be inserted |
+| `get_item_sockets` | An item's sockets with current plugs and their progress, and the options for one socket with unlock progress and why blocked ones can't be inserted; for subclass aspects and fragments, whether each is bought (and its price) according to the vendors |
 | `get_weekly_activities` | What is active now: featured raids/dungeons, Nightfall, Trials and other milestones with modifiers, challenges and rotation dates |
 | `plan_activity` | Reads an activity's current modifiers (champions, shields, surges, threats, locks, power) and checks a character against them, with owned gear that fills the gaps |
 | `get_vendor` | A vendor's current stock (Xûr, Banshee-44, Ada-1...) with whether you already own each item; `public` shows the character-independent stock |
@@ -122,7 +122,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `save_loadout` ✎ | Saves what's equipped (optionally equipping given items first) into a loadout slot; replacing one needs `overwrite` |
 | `rename_loadout` ✎ | Renames a loadout to one of the game's preset names |
 | `clear_loadout` ✎ | Deletes a saved loadout (gear is untouched) |
-| `apply_plugs` ✎ | Equips armor and weapon mods, weapon perk switches, subclass abilities/aspects/fragments, artifact perks, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Refuses masterworks, catalysts, mementos and artifact resets |
+| `apply_plugs` ✎ | Equips armor and weapon mods, weapon perk switches, subclass abilities/aspects/fragments, artifact perks, shaders, ornaments, tuning; checks fit, unlocks and armor energy. Aspects and fragments follow the Aspects/Fragments vendors (a bought one is tried even when Bungie's profile still blocks it; an unbought one is refused with its price). `waitSeconds` retries rejected inserts while Bungie's data catches up. Refuses masterworks, catalysts, mementos and artifact resets |
 
 **Bungie's data lags writes.** After a change (mod, perk, loadout, equip, quest tracking), Bungie's read endpoints can keep showing the old state for a minute or more (up to about 2.5 minutes in testing), and can flip between old and new meanwhile. Write tools report `confirmed: false` with a note instead of guessing; `apply_plugs` remembers its own recent changes for 5 minutes, and `get_character` / `get_item_details` read live. Loadout equips are also subject to the game's one-exotic-weapon / one-exotic-armor rule, which it enforces silently: `equip_loadout` warns in advance when a loadout's exotic would be skipped.
 

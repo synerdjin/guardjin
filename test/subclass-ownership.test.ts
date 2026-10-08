@@ -6,7 +6,7 @@ import { describeSubclass, SUBCLASS_STAT_PLUG, type SubclassSummary } from '../s
 import { ProfileService } from '../src/inventory/profile.js';
 import type { ManifestLoader } from '../src/manifest/manifest.js';
 import { loadSubclassOwnership, subclassVendorIndex, subclassVendors } from '../src/world/subclassVendors.js';
-import { defsFrom, HUNTER, makeInventory, makeItem } from './helpers.js';
+import { defsFrom, HUNTER, makeInventory, makeItem, plugDef, withHashes } from './helpers.js';
 
 const VOID_ASPECTS = 'hunter.void.aspects';
 const VOID_FRAGMENTS = 'shared.void.fragments';
@@ -17,17 +17,15 @@ const LEECHING = 2001;
 const MERCY = 2002;
 const SUBCLASS = 3001;
 
-const plug = (name: string, category: string) => ({ displayProperties: { name, description: '' }, plug: { plugCategoryIdentifier: category } });
 const sells = (name: string, enabled: boolean, ...hashes: number[]) => ({ displayProperties: { name }, enabled, failureStrings: ['', 'Requires Guardian Rank 3'], itemList: hashes.map((itemHash) => ({ itemHash })) });
-const withHashes = (table: Record<number, object>) => Object.fromEntries(Object.entries(table).map(([h, d]) => [h, { hash: Number(h), ...d }]));
 
 /** Two plug categories sold by two vendors (plus a disabled duplicate and an unrelated vendor) and a subclass that sockets them. */
 const defs = defsFrom({
   DestinyInventoryItemDefinition: withHashes({
-    [PROWL]: plug('On the Prowl', VOID_ASPECTS),
-    [TRAPPER]: plug("Trapper's Ambush", VOID_ASPECTS),
-    [LEECHING]: plug('Echo of Leeching', VOID_FRAGMENTS),
-    [MERCY]: plug('Ember of Mercy', 'shared.solar.fragments'),
+    [PROWL]: plugDef('On the Prowl', VOID_ASPECTS),
+    [TRAPPER]: plugDef("Trapper's Ambush", VOID_ASPECTS),
+    [LEECHING]: plugDef('Echo of Leeching', VOID_FRAGMENTS),
+    [MERCY]: plugDef('Ember of Mercy', 'shared.solar.fragments'),
     [GLIMMER]: { displayProperties: { name: 'Glimmer', description: '' } },
     [SUBCLASS]: {
       displayProperties: { name: 'Nightstalker', description: '' },
@@ -191,7 +189,7 @@ describe('ProfileService.characterVendorSales', () => {
     return { http, profile: new ProfileService(http as unknown as HttpClient, account, {} as ManifestLoader) };
   };
 
-  it('caches per character and vendor, shares concurrent reads, and refetches after invalidate', async () => {
+  it('caches per character and vendor, shares concurrent reads, keeps the cache across inventory invalidation, and refetches when fresh', async () => {
     const { http, profile } = setup();
     const [a, b] = await Promise.all([profile.characterVendorSales(HUNTER, 10), profile.characterVendorSales(HUNTER, 10)]);
     expect(a).toEqual([sale(PROWL, true)]);
@@ -200,6 +198,8 @@ describe('ProfileService.characterVendorSales', () => {
     expect(http).toHaveBeenCalledTimes(2);
     profile.invalidate();
     await profile.characterVendorSales(HUNTER, 10);
+    expect(http).toHaveBeenCalledTimes(2);
+    await profile.characterVendorSales(HUNTER, 10, true);
     expect(http).toHaveBeenCalledTimes(3);
   });
 

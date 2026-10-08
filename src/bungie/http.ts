@@ -52,7 +52,7 @@ export interface HttpOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+export const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
  * Builds the HttpClient that every bungie-api-ts helper runs through. It adds the API key and

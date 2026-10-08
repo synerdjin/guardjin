@@ -30,6 +30,15 @@ export function defsFrom(data: Record<string, Record<string, unknown>>, version 
   return new Defs(db, version);
 }
 
+/** Adds each definition's own hash to it, as the manifest does. */
+export const withHashes = (table: Record<number, object>) => Object.fromEntries(Object.entries(table).map(([hash, def]) => [hash, { hash: Number(hash), ...def }]));
+
+/** A plug definition in a plug category such as hunter.void.aspects. */
+export const plugDef = (name: string, plugCategoryIdentifier: string, plugCategoryHash?: number) => ({
+  displayProperties: { name, description: '' },
+  plug: { plugCategoryIdentifier, plugCategoryHash },
+});
+
 /** Real manifest definitions (a small extract) loaded into an in-memory SQLite DB shaped like Bungie's. */
 export function fixtureDefs(): Defs {
   cached ??= defsFrom(JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'manifest.json'), 'utf8')) as Record<string, Record<string, unknown>>);
