@@ -7,7 +7,7 @@ import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampi
 import { auditBuild, BuildSpecSchema, exportBuild } from '../builds/spec.js';
 import { expandHome } from '../config.js';
 import { matchByName } from '../names.js';
-import { loadSubclassOwnership } from '../world/subclassVendors.js';
+import { subclassOwnership } from '../world/subclassVendors.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, STAT_CAP } from '../inventory/constants.js';
 import { locationLabel, namedStats, type Item } from '../inventory/model.js';
@@ -44,6 +44,7 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         subclass: z.string().optional().describe('Subclass to plan with (name or element, e.g. "Nightstalker", "Void", "Prismatic"); default is the equipped one'),
         aspects: z.array(z.string()).max(5).optional().describe('Aspects to plan with instead of the equipped ones'),
         fragments: z.array(z.string()).max(12).optional().describe('Fragments to plan with instead of the equipped ones, e.g. ["Echo of Leeching", "Echo of Starvation"]'),
+        refresh: z.boolean().optional().describe('Re-read which aspects and fragments are bought (cached for 2 minutes), e.g. right after buying one'),
         results: z.number().int().min(1).max(10).optional().describe('Number of combinations to return (default 3)'),
       },
       annotations: READ_ONLY,
@@ -90,7 +91,7 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
       if (planned && !subclassItem) throw new UserError('No subclass to plan aspects or fragments with; pass `subclass`.');
       let setup: PlannedSubclassSetup | undefined;
       if (args.includeSubclassBonus !== false && subclassItem) {
-        const ownership = planned ? await loadSubclassOwnership(ctx.profile, defs, character.id, subclassItem) : undefined;
+        const ownership = planned ? await subclassOwnership(ctx.profile, inv, defs, subclassItem, { fresh: !!args.refresh }) : undefined;
         const summary = describeSubclass(subclassItem, inv, defs, planned && ['ASPECTS', 'FRAGMENTS'], ownership);
         setup = planSubclassSetup(summary, defs, character.classType, { aspects: args.aspects, fragments: args.fragments });
       }
@@ -127,6 +128,7 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
         subclass: subclassItem?.name,
         plannedSetup: setup && planned ? { aspects: setup.aspects.map((p) => p.name), fragments: setup.fragments.map((p) => p.name), fragmentSlots: setup.fragmentSlots } : undefined,
         unowned: setup?.unowned,
+        unownedNote: setup?.unowned && !args.refresh ? 'Ownership is cached for up to 2 minutes; if you just bought one of these, run again with refresh: true.' : undefined,
         warning: setup?.warning,
         subclassStatBonus: bonus.some((b) => b !== 0) ? namedStats(bonus, defs) : undefined,
         subclassStatBonusFrom: bonusFrom?.length ? bonusFrom : undefined,

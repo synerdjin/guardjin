@@ -2,8 +2,8 @@ import type { InventoryModel, Item } from '../inventory/model.js';
 import type { ProfileService } from '../inventory/profile.js';
 import { SUBCLASS_STAT_PLUG } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
-import { loadSubclassOwnership } from '../world/subclassVendors.js';
-import { actingCharacter, planPlugChanges, touchesSubclassPlugs, type OwnershipByItem, type PlugChange, type PlugPlan, type PlugRequest, type PlugResult } from './plugs.js';
+import { subclassOwnership } from '../world/subclassVendors.js';
+import { planPlugChanges, touchesSubclassPlugs, type OwnershipByItem, type PlugChange, type PlugPlan, type PlugRequest, type PlugResult } from './plugs.js';
 
 /** How often to re-read Bungie's data while waiting for it to catch up. */
 export const POLL_SECONDS = 15;
@@ -64,17 +64,21 @@ function explainFailure(prepared: PreparedPlugs, change: PlugChange, message: st
     : `${message} (the vendor says it is bought, so Bungie's data may still be catching up; retry shortly or pass waitSeconds)`;
 }
 
-/** What the Aspects/Fragments vendors say about a subclass for its holder; undefined for other items. */
-export async function itemOwnership(profile: Pick<ProfileService, 'characterVendorSales'>, inv: InventoryModel, defs: Defs, item: Item, fresh = false) {
-  const characterId = actingCharacter(inv, item);
-  return item.kind === 'subclass' && characterId ? loadSubclassOwnership(profile, defs, characterId, item, fresh) : undefined;
+/**
+ * Ownership for listing one socket's options, or undefined when the socket isn't a visible aspect or
+ * fragment socket (checked on the profile already read, so a hidden fragment slot costs no vendor call).
+ * Read fresh, so the options agree with what apply_plugs would do (see subclassOwnership).
+ */
+export function socketOwnership(profile: Pick<ProfileService, 'characterVendorSales'>, inv: InventoryModel, defs: Defs, item: Item, socket: number) {
+  const state = item.instanceId ? inv.raw.itemComponents?.sockets?.data?.[item.instanceId]?.sockets?.[socket] : undefined;
+  const visible = !!state && state.isVisible !== false && state.isEnabled !== false;
+  return visible && touchesSubclassPlugs(defs, item, { socket }) ? subclassOwnership(profile, inv, defs, item, { fresh: true }) : Promise.resolve(undefined);
 }
 
 /**
  * ApplyDeps.prepare for the live account: plans against the items' live state (the cached profile can lag
- * recent writes) and reads the vendors fresh for requests that touch aspects or fragments, since refusing
- * a plug as unbought on a stale answer would be wrong. A retry only re-reads the rejected items, reusing
- * the profile read before.
+ * recent writes) and reads ownership fresh for requests that touch aspects or fragments (see
+ * subclassOwnership). A retry only re-reads the rejected items, reusing the profile read before.
  */
 export function livePreparer(
   profile: Pick<ProfileService, 'inventory' | 'refreshItem' | 'characterVendorSales'>,
@@ -90,7 +94,7 @@ export function livePreparer(
     await Promise.all(
       [...new Set(resolved.map((r) => r.item))].map(async (item) => {
         const touches = resolved.some((r) => r.item === item && touchesSubclassPlugs(defs, item, r));
-        const [own] = await Promise.all([touches ? itemOwnership(profile, inv, defs, item, true) : undefined, profile.refreshItem(inv, item)]);
+        const [own] = await Promise.all([touches ? subclassOwnership(profile, inv, defs, item, { fresh: true }) : undefined, profile.refreshItem(inv, item)]);
         if (own) ownership.set(item, own);
       }),
     );

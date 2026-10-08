@@ -5,7 +5,7 @@ import type { AccountService } from '../src/bungie/account.js';
 import { describeSubclass, SUBCLASS_STAT_PLUG, type SubclassSummary } from '../src/inventory/subclass.js';
 import { ProfileService } from '../src/inventory/profile.js';
 import type { ManifestLoader } from '../src/manifest/manifest.js';
-import { loadSubclassOwnership, subclassVendorIndex, subclassVendors } from '../src/world/subclassVendors.js';
+import { subclassOwnership, subclassVendorIndex, subclassVendors } from '../src/world/subclassVendors.js';
 import { defsFrom, HUNTER, makeInventory, makeItem, plugDef, withHashes } from './helpers.js';
 
 const VOID_ASPECTS = 'hunter.void.aspects';
@@ -91,10 +91,12 @@ describe('subclass vendors', () => {
   });
 });
 
-describe('loadSubclassOwnership', () => {
+const ownershipOf = async (profile: Parameters<typeof subclassOwnership>[0], fresh = false) => (await subclassOwnership(profile, makeInventory([nightstalker]), defs, nightstalker, { fresh }))!;
+
+describe('subclassOwnership', () => {
   it('reads owned from the Owned augment and the price of what is not owned', async () => {
     const profile = profileWith({ 10: [sale(PROWL, true), sale(TRAPPER, false, glimmer(5000))], 11: [sale(LEECHING, true)] });
-    const ownership = await loadSubclassOwnership(profile, defs, HUNTER, nightstalker);
+    const ownership = await ownershipOf(profile);
     expect(ownership.get(PROWL)).toEqual({ owned: true, price: undefined, locked: undefined });
     expect(ownership.get(TRAPPER)).toEqual({ owned: false, price: 'Glimmer x5000', locked: undefined });
     expect(ownership.get(LEECHING)?.owned).toBe(true);
@@ -102,32 +104,40 @@ describe('loadSubclassOwnership', () => {
 
   it('does not treat a cost as proof of not owning', async () => {
     const profile = profileWith({ 10: [sale(PROWL, true, glimmer(5000)), sale(TRAPPER, true)] });
-    expect((await loadSubclassOwnership(profile, defs, HUNTER, nightstalker)).get(PROWL)?.owned).toBe(true);
+    expect((await ownershipOf(profile)).get(PROWL)?.owned).toBe(true);
   });
 
   it('says why a plug that is not owned cannot be bought yet', async () => {
     const profile = profileWith({ 10: [sale(PROWL, true), sale(TRAPPER, false, glimmer(5000), 1)] });
-    expect((await loadSubclassOwnership(profile, defs, HUNTER, nightstalker)).get(TRAPPER)).toEqual({ owned: false, price: 'Glimmer x5000', locked: 'Requires Guardian Rank 3' });
+    expect((await ownershipOf(profile)).get(TRAPPER)).toEqual({ owned: false, price: 'Glimmer x5000', locked: 'Requires Guardian Rank 3' });
   });
 
   it('keeps plugs the vendor defines but does not offer, with ownership unknown', async () => {
     const profile = profileWith({ 10: [sale(PROWL, true)] });
-    const trapper = (await loadSubclassOwnership(profile, defs, HUNTER, nightstalker)).get(TRAPPER);
+    const trapper = (await ownershipOf(profile)).get(TRAPPER);
     expect(trapper?.owned).toBeUndefined();
     expect(trapper?.locked).toMatch(/doesn't offer it/);
   });
 
   it('falls back to the next vendor of a category when one fails or has no stock', async () => {
     const failing = profileWith({ 10: [sale(PROWL, true), sale(TRAPPER, true)], 12: [sale(LEECHING, false, glimmer(10000))] }, [11]);
-    expect((await loadSubclassOwnership(failing, defs, HUNTER, nightstalker)).get(LEECHING)?.owned).toBe(false);
+    expect((await ownershipOf(failing)).get(LEECHING)?.owned).toBe(false);
     const empty = profileWith({ 11: [], 12: [sale(LEECHING, true)] });
-    expect((await loadSubclassOwnership(empty, defs, HUNTER, nightstalker)).get(LEECHING)?.owned).toBe(true);
+    expect((await ownershipOf(empty)).get(LEECHING)?.owned).toBe(true);
   });
 
   it('passes fresh through to the vendor cache', async () => {
     const characterVendorSales = vi.fn(async () => [] as DestinyVendorSaleItemComponent[]);
-    await loadSubclassOwnership({ characterVendorSales }, defs, HUNTER, nightstalker, true);
+    await ownershipOf({ characterVendorSales }, true);
     expect(characterVendorSales).toHaveBeenCalledWith(HUNTER, 10, true);
+  });
+
+  it('asks the vendors for the holder of a subclass, and answers nothing for other items', async () => {
+    const characterVendorSales = vi.fn(async () => [] as DestinyVendorSaleItemComponent[]);
+    const gun = makeItem({ kind: 'weapon' });
+    await ownershipOf({ characterVendorSales });
+    expect(characterVendorSales).toHaveBeenCalledWith(HUNTER, 10, false);
+    expect(await subclassOwnership({ characterVendorSales }, makeInventory([gun]), defs, gun, { fresh: false })).toBeUndefined();
   });
 });
 

@@ -2,8 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Context } from '../context.js';
 import { defaultSleep } from '../bungie/http.js';
-import { applyPlugChanges, itemOwnership, livePreparer } from '../sockets/apply.js';
-import { currentPlugProgress, executePlugChanges, itemSockets, socketOptions, touchesSubclassPlugs, type PlugChange } from '../sockets/plugs.js';
+import { applyPlugChanges, livePreparer, socketOwnership } from '../sockets/apply.js';
+import { currentPlugProgress, executePlugChanges, itemSockets, socketOptions, type PlugChange } from '../sockets/plugs.js';
 import { READ_ONLY, WRITE, ok, resolveItem, safe } from './util.js';
 
 const MAX_OPTIONS = 40;
@@ -40,7 +40,7 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
     safe(async ({ item: ref, socket, query }) => {
       const [inv, defs] = await Promise.all([ctx.profile.inventory(), ctx.manifest.load()]);
       const item = resolveItem(inv, ref);
-      await ctx.profile.refreshItem(inv, item);
+      const [ownership] = await Promise.all([socket === undefined ? undefined : socketOwnership(ctx.profile, inv, defs, item, socket), ctx.profile.refreshItem(inv, item)]);
       const sockets = itemSockets(inv, defs, item);
       const energy = item.armor?.energy;
       if (socket === undefined) {
@@ -57,8 +57,6 @@ export function registerSocketTools(server: McpServer, ctx: Context): void {
       const target = sockets.find((s) => s.index === socket);
       if (!target) return ok({ item: item.name, error: `No visible socket ${socket}. Sockets: ${sockets.map((s) => s.index).join(', ')}` });
       const q = query?.trim().toLowerCase();
-      // Read the vendors live, as apply_plugs does, so the two never disagree right after a purchase.
-      const ownership = touchesSubclassPlugs(defs, item, { socket }) ? await itemOwnership(ctx.profile, inv, defs, item, true) : undefined;
       const options = socketOptions(inv, defs, item, socket, ownership)
         .map((o) => {
           const d = defs.item(o.hash);

@@ -1,6 +1,6 @@
 import type { DestinyVendorDefinition, DestinyVendorSaleItemComponent } from 'bungie-api-ts/destiny2';
 import { acceptedCategories } from '../inventory/subclass.js';
-import type { Item } from '../inventory/model.js';
+import { actingCharacter, type InventoryModel, type Item } from '../inventory/model.js';
 import type { ProfileService } from '../inventory/profile.js';
 import type { Defs } from '../manifest/defs.js';
 import { costText } from './vendors.js';
@@ -70,19 +70,26 @@ function readSales(defs: Defs, vendorHash: number, sales: DestinyVendorSaleItemC
 }
 
 /**
- * Which of a subclass's aspects and fragments the character has bought, read from the vendors that
- * sell them: Bungie's profile plug sets list every fragment as insertable whether or not it was bought,
- * and leave most aspects out, so the vendor is the one place ownership is recorded. For each category
- * the first vendor that has stock for the character answers; one that fails or is empty is skipped.
- * `fresh` bypasses the profile's vendor cache (e.g. right after buying something in game).
+ * What a subclass's holder has bought among its aspects and fragments, or undefined for any other item.
+ * Everything that lists, plans or applies aspects and fragments asks here, because Bungie's profile plug
+ * sets can't answer: they list every fragment as insertable whether or not it was bought, and block bought
+ * aspects on a character that has been idle. The vendor is the one place ownership is recorded; for each
+ * category the first vendor with stock for the character answers, and one that fails or is empty is skipped.
+ *
+ * `fresh` is the caller's call, because only the caller knows what the answer is for: reads that only
+ * describe may use the profile's 2-minute vendor cache (offer a refresh input next to them); anything that
+ * refuses or plans a write, or must agree with one, reads fresh, since turning a plug down as unbought on a
+ * stale answer would be wrong.
  */
-export async function loadSubclassOwnership(
+export async function subclassOwnership(
   profile: Pick<ProfileService, 'characterVendorSales'>,
+  inv: Pick<InventoryModel, 'characters'>,
   defs: Defs,
-  characterId: string,
   item: Item,
-  fresh = false,
-): Promise<Map<number, PlugOwnership>> {
+  { fresh }: { fresh: boolean },
+): Promise<Map<number, PlugOwnership> | undefined> {
+  const characterId = actingCharacter(inv, item);
+  if (item.kind !== 'subclass' || !characterId) return undefined;
   const out = new Map<number, PlugOwnership>();
   await Promise.all(
     subclassVendors(item, defs).map(async (vendors) => {
