@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { chooseIdentifiers, loadoutNames, planEquipLoadout, resolveSlot } from '../src/loadouts/actions.js';
+import { chooseIdentifiers, findLoadoutSlot, loadoutNames, planEquipLoadout, resolveSlot } from '../src/loadouts/actions.js';
 import { UserError } from '../src/errors.js';
 import { Buckets } from '../src/inventory/constants.js';
-import { WARLOCK, fixtureDefs, makeInventory, makeItem } from './helpers.js';
+import { HUNTER, WARLOCK, characters, fixtureDefs, makeInventory, makeItem } from './helpers.js';
 
 const defs = fixtureDefs();
 const GAMMA = 752612101;
@@ -11,12 +11,13 @@ const constants = defs.loadoutConstants()!;
 const empty = { colorHash: 0, iconHash: 0, nameHash: 0, items: [] };
 const saved = (ids: string[], nameHash = GAMMA) => ({ colorHash: 11, iconHash: 22, nameHash, items: ids.map((itemInstanceId) => ({ itemInstanceId, plugItemHashes: [] })) });
 
-function setup(loadouts: unknown[]) {
+function setup(loadouts: unknown[], hunterLoadouts?: unknown[]) {
   const inv = makeInventory([
     makeItem({ instanceId: 'on', name: 'Equipped Helm', equipped: true, location: { type: 'character', characterId: WARLOCK } }),
     makeItem({ instanceId: 'vault', name: 'Vault Gloves', location: { type: 'vault' } }),
   ]);
-  inv.raw = { characterLoadouts: { data: { [WARLOCK]: { loadouts } } } } as unknown as typeof inv.raw;
+  const data = { [WARLOCK]: { loadouts }, ...(hunterLoadouts ? { [HUNTER]: { loadouts: hunterLoadouts } } : {}) };
+  inv.raw = { characterLoadouts: { data } } as unknown as typeof inv.raw;
   return inv;
 }
 
@@ -94,5 +95,37 @@ describe('planEquipLoadout', () => {
     const clean = makeInventory([exoticKinetic]);
     clean.raw = inv.raw;
     expect(planEquipLoadout(clean, defs, resolveSlot(clean, defs, WARLOCK, 0)).conflicts).toEqual([]);
+  });
+});
+
+describe('findLoadoutSlot', () => {
+  const OTHER = constants.loadoutNameHashes[0];
+  /** The Warlock has Gamma and another loadout; the Hunter has `hunter`. */
+  const withHunter = (hunter: unknown[]) => setup([saved(['on']), saved(['vault'], OTHER)], hunter);
+
+  it('finds a unique name on any character', () => {
+    const inv = withHunter([saved(['vault'], OTHER)]);
+    const slot = findLoadoutSlot(inv, defs, 'gamma');
+    expect(slot).toMatchObject({ characterId: WARLOCK, index: 0 });
+    expect(slot.loadout?.name).toBe('Gamma');
+  });
+
+  it('refuses a name several characters share, and names them', () => {
+    const inv = withHunter([saved(['vault'])]);
+    expect(() => findLoadoutSlot(inv, defs, 'Gamma')).toThrow(/Several characters have a loadout named "Gamma": Warlock \(slot 0\), Hunter \(slot 0\)\. Pass character/);
+    expect(findLoadoutSlot(inv, defs, 'Gamma', HUNTER).characterId).toBe(HUNTER);
+  });
+
+  it('reads an index on the given character, or on the most recently played one', () => {
+    const inv = withHunter([saved(['vault']), saved(['vault'], OTHER)]);
+    expect(findLoadoutSlot(inv, defs, 1, HUNTER)).toMatchObject({ characterId: HUNTER, index: 1 });
+    expect(findLoadoutSlot(inv, defs, '0').characterId).toBe(characters[0].id);
+  });
+
+  it('lists what is saved for an unknown name, and refuses an empty slot', () => {
+    const inv = withHunter([saved(['vault'], OTHER)]);
+    expect(() => findLoadoutSlot(inv, defs, 'Nope')).toThrow(/No saved loadout is named "Nope"\. Saved: Gamma on Warlock \(slot 0\)/);
+    const withEmpty = setup([saved(['on']), empty]);
+    expect(() => findLoadoutSlot(withEmpty, defs, 1, WARLOCK)).toThrow(/slot 1 is empty/);
   });
 });

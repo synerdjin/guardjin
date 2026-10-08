@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { currentPlugProgress, itemSockets, planPlugChanges, socketOptions, type PlugRequest } from '../src/sockets/plugs.js';
-import { WARLOCK, fixtureDefs, makeInventory, makeItem } from './helpers.js';
+import { WARLOCK, fixtureDefs, helmetFixture, makeInventory, makeItem } from './helpers.js';
 
 const defs = fixtureDefs();
-const HELMET = 2214884208; // New Demotic Cover: 0 general mod, 1-3 head mods, 4 shader, 5 masterwork
-const EMPTY_GENERAL = 1980618587;
-const EMPTY_HEAD = 1078080765;
-const DEFAULT_SHADER = 4248210736;
-const UPGRADE_ARMOR = 788990507;
-const GRENADE_MOD = 3896141096; // cost 1
-const MINOR_GRENADE_MOD = 4021790309;
-const ASHES_TO_ASSETS = 856936828; // cost 3
-const HEAVY_AMMO_FINDER = 644105; // cost 1
-const GENERAL_SET = 731468111;
-const HEAD_SET = 2037229815;
+const { HELMET, EMPTY_GENERAL, EMPTY_HEAD, DEFAULT_SHADER, UPGRADE_ARMOR, GRENADE_MOD, MINOR_GRENADE_MOD, ASHES_TO_ASSETS, HEAVY_AMMO_FINDER, GENERAL_SET, HEAD_SET } = helmetFixture;
 
 function setup(energy = { capacity: 10, used: 3 }) {
   const helm = makeItem({ instanceId: 'helm1', hash: HELMET, location: { type: 'character', characterId: WARLOCK } });

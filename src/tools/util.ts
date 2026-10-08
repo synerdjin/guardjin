@@ -6,7 +6,7 @@ import { ARMOR_BUCKETS, ARMOR_STAT_KEYS, ARMOR_STATS, type ArmorStatKey } from '
 import { locationLabel, namedStats, statTotal, type Character, type InventoryModel, type Item } from '../inventory/model.js';
 import type { Defs } from '../manifest/defs.js';
 import { weaponChampion } from '../builds/champions.js';
-import { EMPTYISH } from '../builds/spec.js';
+import { EMPTYISH } from '../sockets/plugs.js';
 
 export { UserError };
 

@@ -3,6 +3,7 @@ import { ARMOR_BUCKETS, ARMOR_STATS, ARMOR_STAT_KEYS, WEAPON_BUCKETS, type Armor
 import type { Character, InventoryModel, Item } from '../inventory/model.js';
 import { describeSubclass, findSubclass, sectionPlugs } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
+import { EMPTYISH } from '../sockets/plugs.js';
 import { normName } from '../names.js';
 import { characterArtifacts, describeArtifact } from '../progress/artifact.js';
 import { CHAMPIONS, CHAMPION_NAMES, championCoverage, type Champion, type ChampionExtras } from './champions.js';
@@ -58,9 +59,13 @@ export type BuildSpec = z.infer<typeof BuildSpecSchema>;
 const armorSlotKey = (bucketHash: number): ArmorSlotKey | undefined => ARMOR_SLOT_KEYS[(ARMOR_BUCKETS as readonly number[]).indexOf(bucketHash)];
 const weaponSlotKey = (bucketHash: number) => WEAPON_SLOT_KEYS[(WEAPON_BUCKETS as readonly number[]).indexOf(bucketHash)];
 const lc = normName;
-export const EMPTYISH = /^(empty|default)\b/i;
 
-function equippedOn(inv: InventoryModel, characterId: string): Item[] {
+/** A weapon that is stuck at power 10 (a legacy copy). */
+export const isLegacyWeapon = (item: Item) => item.kind === 'weapon' && item.power !== undefined && item.power <= 10;
+export const legacyWeaponMessage = (item: Item) => `${item.name} is a legacy weapon stuck at power ${item.power}; replace it with a current copy`;
+export const notMasterworkedMessage = (item: Item) => `${item.name} is not masterworked${item.isExotic && item.kind === 'weapon' ? ' (its catalyst is not finished)' : ''}`;
+
+export function equippedOn(inv: InventoryModel, characterId: string): Item[] {
   return inv.items.filter((i) => i.equipped && i.location.type === 'character' && i.location.characterId === characterId);
 }
 
@@ -236,7 +241,7 @@ export function auditBuild(inv: InventoryModel, defs: Defs, character: Character
       suggestEquip(copy, w.name);
       continue;
     }
-    if (worn.power !== undefined && worn.power <= 10) issues.push({ area: 'weapons', message: `${worn.name} is a legacy weapon stuck at power 10; replace it with a current copy` });
+    if (isLegacyWeapon(worn)) issues.push({ area: 'weapons', message: legacyWeaponMessage(worn) });
     for (const perk of w.perks ?? []) {
       const column = worn.weapon?.perks.find((c) => c.options.some((o) => lc(o.name) === lc(perk)));
       if (!column) issues.push({ area: 'weapons', message: `${worn.name}: this roll has no ${perk}` });
@@ -249,7 +254,7 @@ export function auditBuild(inv: InventoryModel, defs: Defs, character: Character
       issues.push({ area: 'mods', message: `${worn.name}: weapon mod is ${worn.weapon?.mod?.name ?? 'empty'}, spec wants ${w.mod}` });
       plugs.push({ item: worn.instanceId!, plug: w.mod, for: `${worn.name} mod` });
     }
-    if (!worn.masterworked) issues.push({ area: 'masterwork', message: `${worn.name} is not masterworked${worn.isExotic ? ' (its catalyst is not finished)' : ''}` });
+    if (!worn.masterworked) issues.push({ area: 'masterwork', message: notMasterworkedMessage(worn) });
   }
 
   // Artifact

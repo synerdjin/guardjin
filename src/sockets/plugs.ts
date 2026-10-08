@@ -13,7 +13,10 @@ import { describeOwnership, type PlugOwnership } from '../world/subclassVendors.
  * crafting and infusion plugs are consumed or irreversible.
  */
 const PROTECTED = /masterwork|armor_stats|armor_archetypes|intrinsics|memento|crafting|infusion|enhancers|deepsight|trackers/i;
-const EMPTYISH = /^(empty|default)\b/i;
+/** An empty or default plug ("Empty Mod Socket", "Default Shader"). */
+export const EMPTYISH = /^(empty|default)\b/i;
+/** Socket categories and plug categories that only change how gear looks. */
+const COSMETIC = /cosmetic|shader|ornament/i;
 
 export interface Socket {
   index: number;
@@ -25,6 +28,10 @@ export interface Socket {
   accepts: Set<number>;
   /** False for sockets this tool won't change (see PROTECTED). */
   changeable: boolean;
+  /** Shaders and ornaments: they change how gear looks, not how a build plays. */
+  cosmetic: boolean;
+  /** False for a socket the game hides or disables right now (e.g. a fragment slot the aspects don't open); only listed with `includeDisabled`. */
+  enabled: boolean;
 }
 
 export interface PlugProgress {
@@ -66,8 +73,11 @@ export function currentPlugProgress(inv: InventoryModel, defs: Defs, item: Item,
   return describeProgress(inv.raw.itemComponents?.plugObjectives?.data?.[item.instanceId]?.objectivesPerPlug?.[plugHash], defs);
 }
 
-/** Sockets of an instanced item, with their current plugs. Needs the ItemSockets component. */
-export function itemSockets(inv: InventoryModel, defs: Defs, item: Item): Socket[] {
+/**
+ * Sockets of an instanced item, with their current plugs. Needs the ItemSockets component. Hidden or
+ * disabled sockets are left out unless `includeDisabled` (then they come back with `enabled: false`).
+ */
+export function itemSockets(inv: InventoryModel, defs: Defs, item: Item, { includeDisabled = false } = {}): Socket[] {
   const def = defs.item(item.hash);
   const states = item.instanceId ? inv.raw.itemComponents?.sockets?.data?.[item.instanceId]?.sockets : undefined;
   if (!def?.sockets || !states) return [];
@@ -79,7 +89,8 @@ export function itemSockets(inv: InventoryModel, defs: Defs, item: Item): Socket
 
   return def.sockets.socketEntries.flatMap((entry, index): Socket[] => {
     const state = states[index];
-    if (!state || state.isVisible === false || state.isEnabled === false) return [];
+    const enabled = !!state && state.isVisible !== false && state.isEnabled !== false;
+    if (!state || (!enabled && !includeDisabled)) return [];
     const type = defs.socketType(entry.socketTypeHash);
     const currentDef = defs.item(state.plugHash);
     const whitelist = type?.plugWhitelist ?? [];
@@ -93,7 +104,9 @@ export function itemSockets(inv: InventoryModel, defs: Defs, item: Item): Socket
         current: state.plugHash ? { hash: state.plugHash, name: currentDef?.displayProperties.name || `#${state.plugHash}` } : undefined,
         initial: entry.singleInitialItemHash || undefined,
         accepts: new Set(whitelist.map((w) => w.categoryHash)),
+        cosmetic: COSMETIC.test(categoryOf.get(index) ?? '') || whitelist.some((w) => COSMETIC.test(w.categoryIdentifier)),
         changeable: !protectedSocket && whitelist.length > 0,
+        enabled,
       },
     ];
   });

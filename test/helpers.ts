@@ -45,6 +45,24 @@ export function fixtureDefs(): Defs {
   return cached;
 }
 
+/** The New Demotic Cover helmet in the fixture manifest and plugs that fit it. Sockets: 0 general mod, 1-3 head mods, 4 shader, 5 masterwork. */
+export const helmetFixture = {
+  HELMET: 2214884208,
+  EMPTY_GENERAL: 1980618587,
+  EMPTY_HEAD: 1078080765,
+  DEFAULT_SHADER: 4248210736,
+  UPGRADE_ARMOR: 788990507,
+  GRENADE_MOD: 3896141096, // cost 1
+  MINOR_GRENADE_MOD: 4021790309,
+  ASHES_TO_ASSETS: 856936828, // cost 3
+  HEAVY_AMMO_FINDER: 644105, // cost 1
+  GENERAL_SET: 731468111,
+  HEAD_SET: 2037229815,
+} as const;
+
+/** Socket states as the profile reports them, one visible and enabled socket per plug hash. */
+export const socketStates = (plugs: number[]) => plugs.map((plugHash) => ({ plugHash, isEnabled: true, isVisible: true }));
+
 export const WARLOCK = 'c-warlock';
 export const HUNTER = 'c-hunter';
 
