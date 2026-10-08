@@ -87,7 +87,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `lookup_definition` | Searches game data (exotics, perks, mods, aspects, fragments, set bonuses), including items you don't own |
 | `optimize_armor` | Best 5-piece armor combinations for stat minimums and priorities, a required exotic, set bonuses, and stat mods; plans with the equipped subclass or with aspects/fragments you haven't equipped, counting every fragment's stat bonus |
 | `export_build` / `audit_build` | Save the equipped setup as a JSON build spec; check a character against a spec and get the equip/plug changes that close the gaps |
-| `champion_coverage` | Which champion types the equipped (or given) gear, subclass and artifact handle, with owned weapons that fill gaps |
+| `champion_coverage` | Which champion types the equipped (or given) gear, subclass and artifact handle, with owned weapons that fill gaps; hand-maintained corrections in `data/champion-overrides.json` (per item, per perk, extra stun verbs such as freeze) are marked as overrides with their source |
 | `vault_summary` | Vault use vs capacity, full character buckets, postmaster counts |
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
 | `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence (higher-tier copies are kept first) |

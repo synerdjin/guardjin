@@ -168,7 +168,8 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
       description:
         'Which champion types (Barrier, Overload, Unstoppable) a character can handle, and how: weapon frames and perks (the game\'s hidden champion traits, which item text does not show), exotic weapons and armor, ' +
         'the equipped artifact\'s perks, and subclass abilities, aspects and fragments whose stun verbs match the game\'s rules (suppress/slow/jolt = Overload, radiant/volatile/unraveling = Barrier, blind/suspend/shatter/ignition = Unstoppable). ' +
-        'high confidence = marked by the game; medium = inferred from ability text. With scope "owned", it also lists owned weapons that fill each gap.',
+        'Hand-maintained corrections from data/champion-overrides.json (per item, per perk, or extra stun verbs observed in play) are marked kind "override" or noted, with their source. ' +
+        'high confidence = marked by the game or a hand-maintained override; medium = inferred from ability text. With scope "owned", it also lists owned weapons that fill each gap.',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name; default is the most recently played'),
         items: z.array(z.string()).max(10).optional().describe('Check these weapons/exotic armor (ids or names) instead of what is equipped'),

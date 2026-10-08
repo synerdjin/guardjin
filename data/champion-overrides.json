@@ -1,5 +1,22 @@
 {
-  "_comment": "Hand-maintained corrections for champion coverage, applied after the manifest and community data. Keys are item hashes (weapons or exotic armor); values are barrier, overload, unstoppable, or none. Add a note with the source and date.",
+  "_comment": "Hand-maintained corrections for champion coverage, each shown in the report as kind 'override' (or in a stun verb's note) with its note. items: item hash -> { champion: barrier | overload | unstoppable | none, note }, replacing everything else known about the item. plugs: plug hash -> { champion, note }, granted to every item rolled with the plug. verbs: { champion, element, verb, note }, a stun verb the game's triumph text doesn't list, matched in ability and perk text in all its forms. Put the source and date in each note.",
   "items": {},
-  "notes": {}
+  "plugs": {
+    "2978966579": {
+      "champion": "unstoppable",
+      "note": "Chill Clip: confirmed in play (2026-10) to stun Unstoppables; its text only says it slows"
+    },
+    "344235611": {
+      "champion": "unstoppable",
+      "note": "Enhanced Chill Clip: confirmed in play (2026-10) to stun Unstoppables; its text only says it slows"
+    }
+  },
+  "verbs": [
+    {
+      "champion": "unstoppable",
+      "element": "Stasis",
+      "verb": "freeze",
+      "note": "freezing stuns Unstoppables, confirmed in play (2026-10); the game's triumph text only lists shatter"
+    }
+  ]
 }
