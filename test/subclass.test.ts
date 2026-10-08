@@ -1,7 +1,7 @@
 import type { DestinyInventoryItemDefinition } from 'bungie-api-ts/destiny2';
 import { describe, expect, it } from 'vitest';
 import { ARMOR_STATS } from '../src/inventory/constants.js';
-import { findSubclass, FRAGMENT_CAPACITY_STAT, plugStatBonus, planSubclassSetup, subclassPlugStats, type SubclassPlug, type SubclassSummary } from '../src/inventory/subclass.js';
+import { characterSubclasses, findSubclass, FRAGMENT_CAPACITY_STAT, plugStatBonus, planSubclassSetup, subclassPlugStats, type SubclassPlug, type SubclassSummary } from '../src/inventory/subclass.js';
 import { HUNTER, makeInventory, makeItem } from './helpers.js';
 import type { Defs } from '../src/manifest/defs.js';
 
@@ -81,6 +81,11 @@ describe('findSubclass', () => {
     expect(findSubclass(inv, defs, HUNTER, 'Prismatic')).toBe(prismatic);
   });
 
+  it('lists every subclass, or those matching a name or element', () => {
+    expect(characterSubclasses(inv, defs, HUNTER)).toHaveLength(3);
+    expect(characterSubclasses(inv, defs, HUNTER, 'Void')).toEqual([nightstalker]);
+  });
+
   it('prefers the equipped subclass among several matches, and finds nothing for an unknown name', () => {
     expect(findSubclass(inv, defs, HUNTER, 'n')).toBe(gunslinger);
     expect(findSubclass(inv, defs, HUNTER, 'Stasis')).toBeUndefined();
@@ -106,6 +111,29 @@ describe('planSubclassSetup', () => {
     expect(plan.bonus).toEqual([0, 10, -10, -10, 0, 0]);
     expect(plan.fragmentSlots).toEqual({ used: 3, available: 2 });
     expect(plan.warning).toMatch(/3 fragments need 3 slots/);
+  });
+
+  it('reports chosen plugs the character has not bought', () => {
+    const withOwnership: SubclassSummary = {
+      ...summary,
+      sections: [
+        summary.sections[0],
+        {
+          ...summary.sections[1],
+          available: [
+            { ...asPlug(leeching), owned: true },
+            { ...asPlug(starvation), owned: false, price: 'Glimmer x10000' },
+            { ...asPlug(undermining), locked: "the vendor doesn't offer it" },
+          ],
+        },
+      ],
+    };
+    const plan = planSubclassSetup(withOwnership, defs, 'hunter', { fragments: ['Echo of Leeching', 'Echo of Starvation', 'Echo of Undermining'] });
+    expect(plan.unowned).toEqual([
+      { name: 'Echo of Starvation', price: 'Glimmer x10000', locked: undefined },
+      { name: 'Echo of Undermining', price: undefined, locked: "the vendor doesn't offer it" },
+    ]);
+    expect(planSubclassSetup(withOwnership, defs, 'hunter', { fragments: ['Echo of Leeching'] }).unowned).toBeUndefined();
   });
 
   it('keeps the equipped setup when nothing is planned', () => {

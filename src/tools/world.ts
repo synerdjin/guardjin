@@ -8,6 +8,7 @@ import { buildCharacters } from '../inventory/model.js';
 import { Rarity } from '../inventory/constants.js';
 import { isCollected } from '../progress/collections.js';
 import { availableActivities, buildCurrentActivity } from '../world/activity.js';
+import { costText } from '../world/vendors.js';
 import { buildWeekly } from '../world/weekly.js';
 import { matchActivities, readModifiers, type ActivityCandidate } from '../world/plan.js';
 import { CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampionWeapons } from '../builds/champions.js';
@@ -27,9 +28,6 @@ function vendorCandidates(defs: Defs, vendor: string): number[] {
   }
   return pool.map((v) => v.hash);
 }
-
-const costText = (defs: Defs, costs: { itemHash: number; quantity: number }[]) =>
-  costs.length ? costs.map((c) => `${defs.item(c.itemHash)?.displayProperties.name ?? `#${c.itemHash}`}${c.quantity > 1 ? ` x${c.quantity}` : ''}`) : undefined;
 
 export function registerWorldTools(server: McpServer, ctx: Context): void {
   server.registerTool(

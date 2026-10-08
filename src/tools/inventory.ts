@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { Context } from '../context.js';
 import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../inventory/constants.js';
 import { locationLabel, namedStats, statTotal, type ArmorDetails, type Item } from '../inventory/model.js';
-import { describeSubclass, SUBCLASS_STAT_PLUG, subclassPlugStats } from '../inventory/subclass.js';
+import { characterSubclasses, describeSubclass, SUBCLASS_STAT_PLUG, subclassPlugStats } from '../inventory/subclass.js';
+import { loadSubclassOwnership } from '../world/subclassVendors.js';
 import type { Defs } from '../manifest/defs.js';
 import { CHAMPION_NAMES, itemChampions, loadOverrides } from '../builds/champions.js';
 import { artifactOptions, characterArtifacts, describeArtifact } from '../progress/artifact.js';
@@ -211,27 +212,23 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
     {
       title: 'Subclass options',
       description:
-        'For each subclass on a character: what is equipped and every unlocked super, ability, aspect and fragment, with descriptions and stat bonuses. Use this to reason about builds; apply_plugs equips the choices.',
+        'For each subclass on a character: what is equipped and every unlocked super and ability, plus every aspect and fragment with whether the character has bought it (`owned`, the `price` to unlock it, and `locked` when it cannot be bought yet), with descriptions and stat bonuses. ' +
+        'Ownership comes from the Aspects and Fragments vendors; Prismatic and Strand have none, so their options carry an `ownershipNote` and come from profile data, which can include ones not yet unlocked. Use this to reason about builds; apply_plugs equips the choices.',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name; default is the most recently played'),
-        subclass: z.string().optional().describe('Only this subclass (name substring, e.g. "Prismatic", "Stormcaller")'),
+        subclass: z.string().optional().describe('Only this subclass (name or element, e.g. "Prismatic", "Stormcaller", "Void")'),
+        refresh: z.boolean().optional().describe('Re-read ownership from the vendors (it is cached for 2 minutes), e.g. right after buying an aspect or fragment'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ character, subclass }) => {
+    safe(async ({ character, subclass, refresh }) => {
       const inv = await ctx.profile.inventory();
       const defs = await ctx.manifest.load();
       const c = resolveCharacter(inv, character);
-      const q = subclass?.toLowerCase();
-      const subclasses = inv.items.filter(
-        (i) =>
-          i.kind === 'subclass' &&
-          i.location.type === 'character' &&
-          i.location.characterId === c.id &&
-          (!q || i.name.toLowerCase().includes(q)),
-      );
-      if (!subclasses.length) throw new UserError(`No subclass${q ? ` matching "${subclass}"` : ''} found on your ${c.className}.`);
-      return ok({ character: c.className, subclasses: subclasses.map((s) => describeSubclass(s, inv, defs, true)) });
+      const subclasses = characterSubclasses(inv, defs, c.id, subclass);
+      if (!subclasses.length) throw new UserError(`No subclass${subclass ? ` matching "${subclass}"` : ''} found on your ${c.className}.`);
+      const described = await Promise.all(subclasses.map(async (s) => describeSubclass(s, inv, defs, true, await loadSubclassOwnership(ctx.profile, defs, c.id, s, refresh))));
+      return ok({ character: c.className, subclasses: described });
     }),
   );
 

@@ -2,14 +2,20 @@ import type { DestinyInventoryItemDefinition } from 'bungie-api-ts/destiny2';
 import { UserError } from '../errors.js';
 import type { Defs } from '../manifest/defs.js';
 import { matchByName, normName } from '../names.js';
+import type { PlugOwnership } from '../world/subclassVendors.js';
 import { ARMOR_STAT_INDEX, ARMOR_STATS } from './constants.js';
 import { namedStats, type InventoryModel, type Item } from './model.js';
 
 /** Stat on an aspect that grants fragment slots (2 or 3). */
 export const FRAGMENT_CAPACITY_STAT = 2223994109;
 
-/** Plug categories of aspects and fragments (Stasis fragments are "trinkets"), e.g. hunter.void.aspects, shared.prism.fragments. */
-export const SUBCLASS_STAT_PLUG = /\.(aspects|fragments|trinkets)$/;
+/** Plug categories of aspects and fragments (Stasis calls them "totems" and "trinkets"), e.g. hunter.void.aspects, shared.prism.fragments. */
+export const SUBCLASS_STAT_PLUG = /\.(aspects|totems|fragments|trinkets)$/;
+
+/** Aspect and fragment plug categories a socket type accepts (e.g. hunter.void.aspects). */
+export function acceptedCategories(defs: Defs, socketTypeHash: number | undefined): string[] {
+  return (defs.socketType(socketTypeHash)?.plugWhitelist ?? []).map((w) => w.categoryIdentifier).filter((c) => SUBCLASS_STAT_PLUG.test(c));
+}
 
 /** Which of Weapons, Health and Class (ARMOR_STATS indexes 0-2) is each class's class-ability stat. */
 const CLASS_ABILITY_STAT: Record<string, number> = { hunter: 0, titan: 1, warlock: 2 };
@@ -55,7 +61,7 @@ export function subclassPlugStats(
   return Object.keys(stats).length ? { stats } : {};
 }
 
-export interface SubclassPlug {
+export interface SubclassPlug extends Partial<PlugOwnership> {
   hash: number;
   name: string;
   description: string;
@@ -69,8 +75,10 @@ export interface SubclassSection {
   /** Socket category name as shown in game: SUPER, ABILITIES, ASPECTS, FRAGMENTS, ... */
   category: string;
   equipped: SubclassPlug[];
-  /** Unlocked options for this category (only when requested). */
+  /** Options for this category (only when requested); `owned` says which of them are unlocked when known. */
   available?: SubclassPlug[];
+  /** Aspects/fragments with ownership requested: how many options are owned, e.g. "12/16" or "3/3 (1 unknown)", or "unknown" when the vendor check gave nothing. */
+  owned?: string;
 }
 
 export interface SubclassSummary {
@@ -81,15 +89,18 @@ export interface SubclassSummary {
   characterId: string;
   equipped: boolean;
   sections: SubclassSection[];
+  /** Set when ownership was requested but couldn't be determined for this subclass's aspects and fragments. */
+  ownershipNote?: string;
 }
 
-function toSubclassPlug(def: DestinyInventoryItemDefinition, defs: Defs, classType: string): SubclassPlug {
+function toSubclassPlug(def: DestinyInventoryItemDefinition, defs: Defs, classType: string, ownership?: Map<number, PlugOwnership>): SubclassPlug {
   return {
     hash: def.hash,
     name: def.displayProperties.name,
     description: defs.describePlug(def),
     statBonuses: subclassPlugStats(def, defs, classType).stats,
     fragmentSlots: def.investmentStats?.find((s) => s.statTypeHash === FRAGMENT_CAPACITY_STAT)?.value || undefined,
+    ...ownership?.get(def.hash),
   };
 }
 
@@ -99,8 +110,17 @@ const isEmptyPlug = (def: DestinyInventoryItemDefinition | undefined) =>
 /**
  * Describes a subclass item: equipped super/abilities/aspects/fragments and, optionally, every unlocked
  * option (all categories, or only the listed ones, e.g. ["ASPECTS", "FRAGMENTS"]).
+ * With `ownership` (see loadSubclassOwnership), aspects and fragments say whether they are owned, and
+ * the aspects and fragments the vendors sell are listed as options even when the profile omits them:
+ * Bungie's plug sets list every fragment as insertable and leave most aspects out.
  */
-export function describeSubclass(item: Item, inv: InventoryModel, defs: Defs, includeOptions: boolean | string[]): SubclassSummary {
+export function describeSubclass(
+  item: Item,
+  inv: InventoryModel,
+  defs: Defs,
+  includeOptions: boolean | string[],
+  ownership?: Map<number, PlugOwnership>,
+): SubclassSummary {
   const def = defs.item(item.hash);
   const raw = inv.raw;
   const characterId = item.location.type === 'character' || item.location.type === 'postmaster' ? item.location.characterId : '';
@@ -109,7 +129,15 @@ export function describeSubclass(item: Item, inv: InventoryModel, defs: Defs, in
   const profilePlugSets = raw.profilePlugSets?.data?.plugs ?? {};
   const characterPlugSets = raw.characterPlugSets?.data?.[characterId]?.plugs ?? {};
 
+  const ownedByCategory = new Map<string, number[]>();
+  for (const hash of ownership?.keys() ?? []) {
+    const category = defs.item(hash)?.plug?.plugCategoryIdentifier;
+    if (category) ownedByCategory.set(category, [...(ownedByCategory.get(category) ?? []), hash]);
+  }
+
   const sections: SubclassSection[] = [];
+  let plugSections = 0;
+  let unknownSections = 0;
   for (const cat of def?.sockets?.socketCategories ?? []) {
     const category = defs.socketCategory(cat.socketCategoryHash)?.displayProperties.name || String(cat.socketCategoryHash);
     const equipped: SubclassPlug[] = [];
@@ -118,7 +146,7 @@ export function describeSubclass(item: Item, inv: InventoryModel, defs: Defs, in
     for (const socketIndex of cat.socketIndexes) {
       const plugHash = sockets[socketIndex]?.plugHash;
       const plugDef = plugHash ? defs.item(plugHash) : undefined;
-      if (plugDef && !isEmptyPlug(plugDef)) equipped.push(toSubclassPlug(plugDef, defs, item.classType));
+      if (plugDef && !isEmptyPlug(plugDef)) equipped.push(toSubclassPlug(plugDef, defs, item.classType, ownership));
 
       if (!withOptions) continue;
       const entry = def?.sockets?.socketEntries[socketIndex];
@@ -133,14 +161,20 @@ export function describeSubclass(item: Item, inv: InventoryModel, defs: Defs, in
           for (const p of defs.plugSet(plugSetHash)?.reusablePlugItems ?? []) candidates.push(p.plugItemHash);
         }
       }
+      for (const category of acceptedCategories(defs, entry?.socketTypeHash)) candidates.push(...(ownedByCategory.get(category) ?? []));
       for (const h of candidates) {
         if (available.has(h)) continue;
         const d = defs.item(h);
-        if (!isEmptyPlug(d)) available.set(h, toSubclassPlug(d!, defs, item.classType));
+        if (!isEmptyPlug(d)) available.set(h, toSubclassPlug(d!, defs, item.classType, ownership));
       }
     }
     if (!equipped.length && !available.size) continue;
-    sections.push({ category, equipped, available: withOptions ? [...available.values()] : undefined });
+    const options = withOptions ? [...available.values()] : undefined;
+    const plugOptions = ownership && options?.some((p) => SUBCLASS_STAT_PLUG.test(defs.item(p.hash)?.plug?.plugCategoryIdentifier ?? ''));
+    const owned = plugOptions ? (ownedCount(options) ?? 'unknown') : undefined;
+    if (owned === 'unknown') unknownSections++;
+    if (plugOptions) plugSections++;
+    sections.push({ category, equipped, available: options, owned });
   }
 
   return {
@@ -151,7 +185,19 @@ export function describeSubclass(item: Item, inv: InventoryModel, defs: Defs, in
     characterId,
     equipped: item.equipped,
     sections,
+    ownershipNote:
+      plugSections > 0 && unknownSections === plugSections
+        ? "ownership unknown for this subclass (no vendor sells its aspects and fragments, or the vendor check failed); options come from profile data and may include ones you haven't unlocked"
+        : undefined,
   };
+}
+
+/** "owned/known" over options whose ownership is known, noting any the vendors don't list; undefined when none is known. */
+function ownedCount(options: SubclassPlug[] | undefined): string | undefined {
+  const known = options?.filter((p) => p.owned !== undefined) ?? [];
+  if (!known.length) return undefined;
+  const unknown = options!.length - known.length;
+  return `${known.filter((p) => p.owned).length}/${known.length}${unknown ? ` (${unknown} unknown)` : ''}`;
 }
 
 function elementName(damageType: number): string | undefined {
@@ -168,15 +214,20 @@ export function sectionPlugs(summary: Pick<SubclassSummary, 'sections'>, categor
  * preferring the equipped one; without a query, the equipped subclass.
  */
 export function findSubclass(inv: InventoryModel, defs: Defs, characterId: string, query?: string): Item | undefined {
+  const mine = characterSubclasses(inv, defs, characterId, query);
+  return mine.find((i) => i.equipped) ?? (query?.trim() ? mine[0] : undefined);
+}
+
+/** The character's subclasses, optionally only those whose name or element contains `query`. */
+export function characterSubclasses(inv: InventoryModel, defs: Defs, characterId: string, query?: string): Item[] {
   const mine = inv.items.filter((i) => i.kind === 'subclass' && i.location.type === 'character' && i.location.characterId === characterId);
-  if (!query?.trim()) return mine.find((i) => i.equipped);
+  if (!query?.trim()) return mine;
   const q = normName(query);
   const element = (i: Item) => {
     const damageType = defs.item(i.hash)?.talentGrid?.hudDamageType;
     return damageType !== undefined ? normName(elementName(damageType) ?? '') : '';
   };
-  const matches = mine.filter((i) => normName(i.name).includes(q) || element(i).includes(q));
-  return matches.find((i) => i.equipped) ?? matches[0];
+  return mine.filter((i) => normName(i.name).includes(q) || element(i).includes(q));
 }
 
 export interface PlannedSubclassSetup {
@@ -186,6 +237,8 @@ export interface PlannedSubclassSetup {
   bonus: number[];
   /** Fragments vs the slots the aspects open (available is undefined when none of the aspects says). */
   fragmentSlots: { used: number; available?: number };
+  /** Chosen aspects and fragments the character has not bought yet, or that the vendor doesn't offer yet (needs ownership in the summary). */
+  unowned?: { name: string; price?: string; locked?: string }[];
   warning?: string;
 }
 
@@ -224,11 +277,13 @@ export function planSubclassSetup(
   const unknownSlots = aspects.length > 0 && aspects.every((a) => a.fragmentSlots === undefined);
   const available = unknownSlots ? undefined : aspects.reduce((sum, a) => sum + (a.fragmentSlots ?? 0), 0);
   const used = fragments.length;
+  const unowned = [...aspects, ...fragments].filter((p) => p.owned === false || p.locked).map((p) => ({ name: p.name, price: p.price, locked: p.locked }));
   return {
     aspects,
     fragments,
     bonus,
     fragmentSlots: { used, available },
+    unowned: unowned.length ? unowned : undefined,
     warning:
       available !== undefined && used > available
         ? `${used} fragments need ${used} slots but the aspects open ${available}; ${available ? `drop ${used - available} or change aspects` : 'pick aspects that open fragment slots'}`
