@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyPlugChanges, livePreparer, POLL_SECONDS, type ApplyDeps, type PlugChangeRequest } from '../src/sockets/apply.js';
+import { applyPlugChanges, livePreparer, POLL_SECONDS, socketOwnership, type ApplyDeps, type PlugChangeRequest } from '../src/sockets/apply.js';
 import { findPlugs, planPlugChanges, socketOptions, touchesSubclassPlugs, type PlugResult } from '../src/sockets/plugs.js';
 import type { PlugOwnership } from '../src/world/subclassVendors.js';
 import { defsFrom, HUNTER, makeInventory, makeItem, plugDef, withHashes } from './helpers.js';
@@ -254,12 +254,12 @@ describe('findPlugs', () => {
 describe('livePreparer', () => {
   function setup() {
     const inv = profile([]);
-    const calls = { inventory: 0, refreshed: [] as string[], vendors: [] as [string, number, boolean | undefined][] };
+    const calls = { inventory: 0, refreshed: [] as string[], vendors: [] as (boolean | undefined)[] };
     const prep = livePreparer(
       {
         inventory: async () => (calls.inventory++, inv),
         refreshItem: async (_inv, item) => void calls.refreshed.push(item.instanceId!),
-        characterVendorSales: async (characterId, vendorHash, fresh) => (calls.vendors.push([characterId, vendorHash, fresh]), []),
+        characterVendorSales: async (_character, _vendor, fresh) => (calls.vendors.push(fresh), []),
       },
       { load: async () => defs },
       () => nightstalker,
@@ -276,11 +276,11 @@ describe('livePreparer', () => {
     expect(calls.refreshed).toEqual(['sc1', 'sc1']);
   });
 
-  it('reads the vendors live, and only for requests that touch aspects or fragments', async () => {
+  it('reads the vendors fresh, and only for requests that touch aspects or fragments', async () => {
     const { prep, calls } = setup();
     const withAspect = await prep([{ item: 'sc1', plug: 'On the Prowl' }], false);
     expect(calls.vendors.length).toBeGreaterThan(0);
-    expect(calls.vendors.every(([character, , fresh]) => character === HUNTER && fresh === true)).toBe(true);
+    expect(calls.vendors.every((fresh) => fresh === true)).toBe(true);
     expect(withAspect.ownership?.has(nightstalker)).toBe(true);
 
     calls.vendors.length = 0;
@@ -297,3 +297,27 @@ describe('livePreparer', () => {
     expect(p.errors[0]).toMatch(/No Aspects\/Fragments vendor confirmed/);
   });
 });
+
+describe('socketOwnership', () => {
+  const setup = () => {
+    const fresh: (boolean | undefined)[] = [];
+    return { fresh, vendors: { characterVendorSales: async (_c: string, _v: number, f?: boolean) => (fresh.push(f), []) } };
+  };
+
+  it('reads ownership fresh for a visible aspect or fragment socket', async () => {
+    const { vendors, fresh } = setup();
+    expect(await socketOwnership(vendors, profile([]), defs, nightstalker, 0)).toBeInstanceOf(Map);
+    expect(fresh.length).toBeGreaterThan(0);
+    expect(fresh.every((f) => f === true)).toBe(true);
+  });
+
+  it('costs no vendor call for a hidden socket, a socket that is not an aspect or fragment, or a missing one', async () => {
+    const { vendors, fresh } = setup();
+    const hidden = profile([]);
+    (hidden.raw.itemComponents!.sockets!.data!.sc1.sockets[1] as { isEnabled: boolean }).isEnabled = false;
+    expect(await socketOwnership(vendors, hidden, defs, nightstalker, 1)).toBeUndefined();
+    expect(await socketOwnership(vendors, profile([]), defs, nightstalker, 9)).toBeUndefined();
+    expect(fresh).toEqual([]);
+  });
+});
+

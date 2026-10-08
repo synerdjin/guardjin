@@ -112,6 +112,11 @@ export interface InventoryModel {
   raw: DestinyProfileResponse;
 }
 
+/** The character used for actions on an item: its holder, or the most recently played one for vault items. */
+export function actingCharacter(inv: Pick<InventoryModel, 'characters'>, item: Item): string | undefined {
+  return item.location.type === 'character' || item.location.type === 'postmaster' ? item.location.characterId : inv.characters[0]?.id;
+}
+
 export function className(classType: number): ClassName {
   return ClassNames[classType] ?? 'any';
 }

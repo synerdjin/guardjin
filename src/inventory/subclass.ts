@@ -4,7 +4,7 @@ import type { Defs } from '../manifest/defs.js';
 import { matchByName, normName } from '../names.js';
 import type { PlugOwnership } from '../world/subclassVendors.js';
 import { ARMOR_STAT_INDEX, ARMOR_STATS } from './constants.js';
-import { namedStats, type InventoryModel, type Item } from './model.js';
+import { actingCharacter, namedStats, type InventoryModel, type Item } from './model.js';
 
 /** Stat on an aspect that grants fragment slots (2 or 3). */
 export const FRAGMENT_CAPACITY_STAT = 2223994109;
@@ -110,7 +110,7 @@ const isEmptyPlug = (def: DestinyInventoryItemDefinition | undefined) =>
 /**
  * Describes a subclass item: equipped super/abilities/aspects/fragments and, optionally, every unlocked
  * option (all categories, or only the listed ones, e.g. ["ASPECTS", "FRAGMENTS"]).
- * With `ownership` (see loadSubclassOwnership), aspects and fragments say whether they are owned, and
+ * With `ownership` (see subclassOwnership), aspects and fragments say whether they are owned, and
  * the aspects and fragments the vendors sell are listed as options even when the profile omits them:
  * Bungie's plug sets list every fragment as insertable and leave most aspects out.
  */
@@ -123,7 +123,7 @@ export function describeSubclass(
 ): SubclassSummary {
   const def = defs.item(item.hash);
   const raw = inv.raw;
-  const characterId = item.location.type === 'character' || item.location.type === 'postmaster' ? item.location.characterId : '';
+  const characterId = actingCharacter(inv, item) ?? '';
   const sockets = item.instanceId ? raw.itemComponents?.sockets?.data?.[item.instanceId]?.sockets ?? [] : [];
   const reusable = item.instanceId ? raw.itemComponents?.reusablePlugs?.data?.[item.instanceId]?.plugs ?? {} : {};
   const profilePlugSets = raw.profilePlugSets?.data?.plugs ?? {};

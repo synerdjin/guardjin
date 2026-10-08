@@ -5,7 +5,7 @@ import type { Context } from '../context.js';
 import { ARMOR_STATS, Buckets, ItemType, Rarity, type ArmorStatKey } from '../inventory/constants.js';
 import { locationLabel, namedStats, statTotal, type ArmorDetails, type Item } from '../inventory/model.js';
 import { characterSubclasses, describeSubclass, SUBCLASS_STAT_PLUG, subclassPlugStats } from '../inventory/subclass.js';
-import { loadSubclassOwnership } from '../world/subclassVendors.js';
+import { subclassOwnership } from '../world/subclassVendors.js';
 import type { Defs } from '../manifest/defs.js';
 import { CHAMPION_NAMES, itemChampions, loadOverrides } from '../builds/champions.js';
 import { artifactOptions, characterArtifacts, describeArtifact } from '../progress/artifact.js';
@@ -227,7 +227,7 @@ export function registerInventoryTools(server: McpServer, ctx: Context): void {
       const c = resolveCharacter(inv, character);
       const subclasses = characterSubclasses(inv, defs, c.id, subclass);
       if (!subclasses.length) throw new UserError(`No subclass${subclass ? ` matching "${subclass}"` : ''} found on your ${c.className}.`);
-      const described = await Promise.all(subclasses.map(async (s) => describeSubclass(s, inv, defs, true, await loadSubclassOwnership(ctx.profile, defs, c.id, s, refresh))));
+      const described = await Promise.all(subclasses.map(async (s) => describeSubclass(s, inv, defs, true, await subclassOwnership(ctx.profile, inv, defs, s, { fresh: !!refresh }))));
       return ok({ character: c.className, subclasses: described });
     }),
   );

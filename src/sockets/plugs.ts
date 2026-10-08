@@ -2,7 +2,7 @@ import type { HttpClient } from 'bungie-api-ts/http';
 import { DestinySocketArrayType, insertSocketPlugFree, type DestinyInventoryItemDefinition } from 'bungie-api-ts/destiny2';
 import type { DestinyAccount } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
-import type { InventoryModel, Item } from '../inventory/model.js';
+import { actingCharacter, type InventoryModel, type Item } from '../inventory/model.js';
 import { acceptedCategories, SUBCLASS_STAT_PLUG } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
 import { describeOwnership, type PlugOwnership } from '../world/subclassVendors.js';
@@ -41,7 +41,7 @@ export interface PlugOption {
   reasons: string[];
   /** Unlock progress, e.g. "Enemies defeated 45/100". */
   progress: PlugProgress[];
-  /** Aspects and fragments: what the Aspects/Fragments vendors say about this character (see loadSubclassOwnership). */
+  /** Aspects and fragments: what the Aspects/Fragments vendors say about this character (see subclassOwnership). */
   ownership?: PlugOwnership;
   /** The vendor shows it bought but the profile data still blocks it (Bungie's read data is behind), so it is offered anyway: the game decides. */
   staleProfile?: boolean;
@@ -64,11 +64,6 @@ function describeProgress(list: { objectiveHash: number; progress?: number; comp
 export function currentPlugProgress(inv: InventoryModel, defs: Defs, item: Item, plugHash: number | undefined): PlugProgress[] {
   if (!item.instanceId || !plugHash) return [];
   return describeProgress(inv.raw.itemComponents?.plugObjectives?.data?.[item.instanceId]?.objectivesPerPlug?.[plugHash], defs);
-}
-
-/** The character used for socket actions on an item: its holder, or the most recently played one for vault items. */
-export function actingCharacter(inv: InventoryModel, item: Item): string | undefined {
-  return item.location.type === 'character' || item.location.type === 'postmaster' ? item.location.characterId : inv.characters[0]?.id;
 }
 
 /** Sockets of an instanced item, with their current plugs. Needs the ItemSockets component. */
