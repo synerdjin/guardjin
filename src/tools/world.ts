@@ -41,11 +41,12 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
         'challenges, attached vendors and when each rotates out. Public data, the same for every player.',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring of a milestone, activity, modifier or challenge name'),
+        offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ query, limit }) => {
+    safe(async ({ query, offset, limit }) => {
       const [milestones, defs] = await Promise.all([unwrap(getPublicMilestones(ctx.http)), ctx.manifest.load()]);
       const q = query?.trim().toLowerCase();
       const all = buildWeekly(milestones, defs).filter(
@@ -53,7 +54,7 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
           !q ||
           [m.name, ...m.vendors, ...m.activities.flatMap((a) => [a.name, ...a.modifiers, ...a.challenges])].some((t) => t.toLowerCase().includes(q)),
       );
-      return ok(paginate(all, 0, limit ?? 30));
+      return ok(paginate(all, offset ?? 0, limit ?? 30));
     }),
   );
 
@@ -63,16 +64,17 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
       title: 'Current activity',
       description:
         'What a character is doing right now: offline, in orbit or a social space, or inside an activity (with its modes, start time and score), plus your fireteam and open slots. ' +
-        '`gearChangesLikely` says whether gear, mod and loadout changes will probably be accepted. Optionally lists the activities the character can launch.',
+        '`gearChangesLikely` says whether gear, mod and loadout changes will probably be accepted. Optionally lists the activities the character can launch (passing query, offset or limit implies it).',
       inputSchema: {
         character: z.string().optional().describe('Character id or class name. Default: most recently played'),
         available: z.boolean().optional().describe('Also list activities the character can launch now'),
         query: z.string().optional().describe('With available: case-insensitive substring of the activity or modifier name'),
+        offset: z.number().int().min(0).optional().describe('With available: skip this many results (default 0)'),
         limit: z.number().int().min(1).max(100).optional().describe('With available: default 30'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ character, available, query, limit }) => {
+    safe(async ({ character, available, query, offset, limit }) => {
       const [profile, defs] = await Promise.all([
         ctx.profile.components([DestinyComponentType.Characters, DestinyComponentType.CharacterActivities, DestinyComponentType.Transitory]),
         ctx.manifest.load(),
@@ -81,10 +83,10 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
       const activities = profile.characterActivities?.data?.[c.id];
       const current = buildCurrentActivity(activities, profile.profileTransitoryData?.data, defs);
       const q = query?.trim().toLowerCase();
-      const list = available
+      const list = (available ?? (query ?? offset ?? limit) !== undefined)
         ? availableActivities(activities, defs).filter((a) => !q || a.name.toLowerCase().includes(q) || a.modifiers.some((m) => m.toLowerCase().includes(q)))
         : undefined;
-      return ok({ character: c.className, ...current, available: list && paginate(list, 0, limit ?? 30) });
+      return ok({ character: c.className, ...current, available: list && paginate(list, offset ?? 0, limit ?? 30) });
     }),
   );
 
@@ -101,11 +103,12 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
         public: z.boolean().optional().describe('Use the public, character-independent stock: works when the personal lookup fails, but has no ownership info'),
         onlyNew: z.boolean().optional().describe('Hide items you already have collected (not available with public)'),
         query: z.string().optional().describe('Case-insensitive substring of the item name or type'),
+        offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(100).optional().describe('Default 50'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ vendor, character, onlyNew, query, limit, public: publicStock }) => {
+    safe(async ({ vendor, character, onlyNew, query, offset, limit, public: publicStock }) => {
       const defs = await ctx.manifest.load();
       const account = await ctx.account.get();
       const inv = await ctx.profile.inventory();
@@ -125,7 +128,7 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
             return { name: def?.displayProperties.name ?? `#${s.itemHash}`, type: def?.itemTypeDisplayName, rarity: Rarity[def?.inventory?.tierType ?? 0], quantity: s.quantity > 1 ? s.quantity : undefined, cost: costText(defs, s.costs) };
           })
           .filter((i) => !q || i.name.toLowerCase().includes(q) || (i.type ?? '').toLowerCase().includes(q));
-        return ok({ vendor: defs.vendor(hash)?.displayProperties.name ?? hash, public: true, nextRefresh: pub.vendors?.data?.[hash]?.nextRefreshDate, ...paginate(items, 0, limit ?? 50) });
+        return ok({ vendor: defs.vendor(hash)?.displayProperties.name ?? hash, public: true, nextRefresh: pub.vendors?.data?.[hash]?.nextRefreshDate, ...paginate(items, offset ?? 0, limit ?? 50) });
       }
 
       let response: DestinyVendorResponse | undefined;
@@ -190,7 +193,7 @@ export function registerWorldTools(server: McpServer, ctx: Context): void {
       return ok({
         vendor: vendorDef?.displayProperties.name ?? vendorHash,
         nextRefresh: response.vendor?.data?.nextRefreshDate,
-        ...paginate(items, 0, limit ?? 50),
+        ...paginate(items, offset ?? 0, limit ?? 50),
       });
     }),
   );

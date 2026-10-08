@@ -183,7 +183,7 @@ describe('buildCurrentActivity', () => {
       { availableActivities: [{ activityHash: DESERT_PERPETUAL, isVisible: true, isCompleted: true, canJoin: true, recommendedLight: 10, modifierHashes: [] }, { activityHash: TOWER, isVisible: false, modifierHashes: [] }] } as never,
       defs,
     );
-    expect(list).toEqual([{ name: 'The Desert Perpetual: Standard', recommendedLight: 10, completed: true, canJoin: true, modifiers: [] }]);
+    expect(list).toEqual([{ activityHash: DESERT_PERPETUAL, name: 'The Desert Perpetual: Standard', recommendedLight: 10, completed: true, canJoin: true, modifiers: [] }]);
   });
 });
 

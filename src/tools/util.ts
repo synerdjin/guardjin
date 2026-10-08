@@ -163,6 +163,14 @@ export function slotIndex(bucketHash: number): number {
   return (ARMOR_BUCKETS as readonly number[]).indexOf(bucketHash);
 }
 
+/** One page of `items`; `nextOffset` is set while more remain. */
 export function paginate<T>(items: T[], offset = 0, limit = 50) {
-  return { total: items.length, offset, returned: Math.min(limit, Math.max(0, items.length - offset)), items: items.slice(offset, offset + limit) };
+  const next = offset + limit;
+  return {
+    total: items.length,
+    offset,
+    returned: Math.min(limit, Math.max(0, items.length - offset)),
+    nextOffset: next < items.length ? next : undefined,
+    items: items.slice(offset, next),
+  };
 }
