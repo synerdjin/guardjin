@@ -96,3 +96,11 @@ export async function loadSubclassOwnership(
   );
   return out;
 }
+
+/** Plain-language state of an aspect or fragment for messages, or undefined when it is bought. */
+export function describeOwnership(own: PlugOwnership): string | undefined {
+  if (own.owned) return undefined;
+  if (own.owned === undefined) return `not available to this character yet: ${own.locked ?? "the vendor doesn't offer it"}`;
+  const price = own.price ? ` (costs ${own.price})` : '';
+  return own.locked ? `not bought${price}, and it can't be bought yet: ${own.locked}` : `not bought${price}`;
+}

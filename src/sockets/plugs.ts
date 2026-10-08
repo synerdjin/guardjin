@@ -3,7 +3,9 @@ import { DestinySocketArrayType, insertSocketPlugFree, type DestinyInventoryItem
 import type { DestinyAccount } from '../bungie/account.js';
 import { unwrap } from '../bungie/http.js';
 import type { InventoryModel, Item } from '../inventory/model.js';
+import { acceptedCategories, SUBCLASS_STAT_PLUG } from '../inventory/subclass.js';
 import type { Defs } from '../manifest/defs.js';
+import { describeOwnership, type PlugOwnership } from '../world/subclassVendors.js';
 
 /**
  * Plug categories this tool never touches, even if the API would accept them: masterworks and
@@ -39,7 +41,14 @@ export interface PlugOption {
   reasons: string[];
   /** Unlock progress, e.g. "Enemies defeated 45/100". */
   progress: PlugProgress[];
+  /** Aspects and fragments: what the Aspects/Fragments vendors say about this character (see loadSubclassOwnership). */
+  ownership?: PlugOwnership;
+  /** The vendor shows it bought but the profile data still blocks it (Bungie's read data is behind), so it is offered anyway: the game decides. */
+  staleProfile?: boolean;
 }
+
+/** What the vendors say about aspects and fragments, per subclass item. */
+export type OwnershipByItem = Map<Item, Map<number, PlugOwnership>>;
 
 function describeProgress(list: { objectiveHash: number; progress?: number; completionValue: number; complete: boolean; visible?: boolean }[] | undefined, defs: Defs): PlugProgress[] {
   return (list ?? [])
@@ -96,7 +105,7 @@ export function itemSockets(inv: InventoryModel, defs: Defs, item: Item): Socket
 }
 
 /** Everything the game lists as selectable in one socket, with whether each can be inserted now. */
-export function socketOptions(inv: InventoryModel, defs: Defs, item: Item, socketIndex: number): PlugOption[] {
+export function socketOptions(inv: InventoryModel, defs: Defs, item: Item, socketIndex: number, ownership?: Map<number, PlugOwnership>): PlugOption[] {
   const def = defs.item(item.hash);
   const entry = def?.sockets?.socketEntries[socketIndex];
   if (!entry || !item.instanceId) return [];
@@ -131,7 +140,50 @@ export function socketOptions(inv: InventoryModel, defs: Defs, item: Item, socke
   for (const p of entry.reusablePlugItems ?? []) add(p.plugItemHash, true);
   // Resetting to an empty/default plug is always allowed.
   if (entry.singleInitialItemHash && EMPTYISH.test(defs.item(entry.singleInitialItemHash)?.displayProperties.name ?? '')) add(entry.singleInitialItemHash, true);
+  if (ownership) applyOwnership(defs, entry.socketTypeHash, out, ownership);
   return [...out.values()];
+}
+
+/**
+ * Folds the vendors' view of aspects and fragments into a socket's options. Bungie's plug sets list
+ * every fragment as insertable whatever was bought, and for a character that has been idle they block
+ * aspects that are bought (the Hunter's Flow State shows canInsert=false while the vendor shows it
+ * owned). The vendor is read live per character, so: what it says is not bought is blocked with the
+ * reason, and what it says is bought is offered even when the profile still blocks it. Inserting is
+ * free and reversible, and the game has the last word.
+ */
+function applyOwnership(defs: Defs, socketTypeHash: number, options: Map<number, PlugOption>, ownership: Map<number, PlugOwnership>): void {
+  const accepts = new Set(acceptedCategories(defs, socketTypeHash));
+  if (!accepts.size) return;
+  for (const [hash, own] of ownership) {
+    if (!accepts.has(defs.item(hash)?.plug?.plugCategoryIdentifier ?? '')) continue;
+    const option = options.get(hash) ?? { hash, canInsert: false, reasons: [], progress: [] };
+    option.ownership = own;
+    const note = describeOwnership(own);
+    if (note) {
+      option.canInsert = false;
+      option.reasons = [note, ...option.reasons];
+    } else if (!option.canInsert) {
+      option.canInsert = true;
+      option.staleProfile = true;
+      option.reasons = [];
+    }
+    options.set(hash, option);
+  }
+}
+
+/** Whether a request involves an aspect or fragment, the plugs whose unlock state the vendors decide. */
+export function touchesSubclassPlugs(defs: Defs, item: Item, req: { plug?: string; socket?: number }): boolean {
+  if (req.socket !== undefined) return acceptedCategories(defs, defs.item(item.hash)?.sockets?.socketEntries[req.socket]?.socketTypeHash).length > 0;
+  return !!req.plug && findPlugs(defs, req.plug).some((d) => SUBCLASS_STAT_PLUG.test(d.plug?.plugCategoryIdentifier ?? ''));
+}
+
+/** For a blocked aspect or fragment no vendor vouched for: the refusal rests on Bungie's profile data alone. */
+function unconfirmedNote(defs: Defs, blocked: PlugOption[]): string {
+  const subclassPlug = blocked.some((o) => !o.ownership && SUBCLASS_STAT_PLUG.test(defs.item(o.hash)?.plug?.plugCategoryIdentifier ?? ''));
+  return subclassPlug
+    ? ". No Aspects/Fragments vendor confirmed whether it is bought (none sells it, or the vendor didn't answer), so this rests on Bungie's profile data, which can be stale for a character you haven't played recently"
+    : '';
 }
 
 export interface PlugRequest {
@@ -144,6 +196,8 @@ export interface PlugRequest {
 }
 
 export interface PlugChange {
+  /** Index of the request this change came from. */
+  request: number;
   item: Item;
   characterId: string;
   socketIndex: number;
@@ -165,18 +219,28 @@ const energyCost = (d: DestinyInventoryItemDefinition | undefined) => d?.plug?.e
 const nameOf = (defs: Defs, hash: number) => defs.item(hash)?.displayProperties.name || `#${hash}`;
 
 /** Plug definitions matching a name (exact first, then substring) or a hash. */
+const plugSearchCache = new WeakMap<Defs, Map<string, DestinyInventoryItemDefinition[]>>();
+
 export function findPlugs(defs: Defs, ref: string): DestinyInventoryItemDefinition[] {
   const text = ref.trim();
+  let cache = plugSearchCache.get(defs);
+  if (!cache) plugSearchCache.set(defs, (cache = new Map()));
+  const hit = cache.get(text);
+  if (hit) return hit;
+  let found: DestinyInventoryItemDefinition[];
   if (/^\d+$/.test(text)) {
     const d = defs.item(Number(text));
-    return d?.plug ? [d] : [];
+    found = d?.plug ? [d] : [];
+  } else {
+    const rows = defs.searchItems({ query: text, limit: 300 });
+    const exact = rows.filter((r) => r.name.toLowerCase() === text.toLowerCase());
+    found = (exact.length ? exact : rows).flatMap((r) => {
+      const d = defs.item(r.hash);
+      return d?.plug ? [d] : [];
+    });
   }
-  const rows = defs.searchItems({ query: text, limit: 300 });
-  const exact = rows.filter((r) => r.name.toLowerCase() === text.toLowerCase());
-  return (exact.length ? exact : rows).flatMap((r) => {
-    const d = defs.item(r.hash);
-    return d?.plug ? [d] : [];
-  });
+  cache.set(text, found);
+  return found;
 }
 
 interface ItemState {
@@ -188,9 +252,17 @@ interface ItemState {
  * Validates and allocates plug insertions. Requests on the same item are planned in order against
  * that item's evolving state, so several mods land in different sockets and energy is tracked.
  */
-export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugRequest[]): PlugPlan {
+export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugRequest[], ownership?: OwnershipByItem): PlugPlan {
   const plan: PlugPlan = { changes: [], unchanged: [], errors: [] };
   const states = new Map<Item, ItemState>();
+  // The inputs of a socket's options don't change while a plan is built.
+  const optionCache = new Map<string, PlugOption[]>();
+  const optionsOf = (item: Item, socketIndex: number) => {
+    const key = `${item.instanceId}:${socketIndex}`;
+    let options = optionCache.get(key);
+    if (!options) optionCache.set(key, (options = socketOptions(inv, defs, item, socketIndex, ownership?.get(item))));
+    return options;
+  };
   const stateOf = (item: Item): ItemState => {
     let s = states.get(item);
     if (!s) {
@@ -200,7 +272,7 @@ export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugR
     return s;
   };
 
-  for (const req of requests) {
+  for (const [index, req] of requests.entries()) {
     const { item } = req;
     const label = `${item.name}${req.plug ? ` ← ${req.plug}` : ''}`;
     const fail = (msg: string) => plan.errors.push(`${label}: ${msg}`);
@@ -264,27 +336,25 @@ export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugR
 
       // For each same-named definition, find sockets that accept it and where it is unlocked.
       let fits = false;
-      let blocked = false;
+      const blocked: PlugOption[] = [];
       const eligible: { socket: Socket; hash: number }[] = [];
       for (const c of candidates) {
         if (PROTECTED.test(c.plug?.plugCategoryIdentifier ?? '')) continue;
         for (const s of pool) {
           if (!s.accepts.has(c.plug!.plugCategoryHash)) continue;
           fits = true;
-          const option = socketOptions(inv, defs, item, s.index).find((o) => o.hash === c.hash);
+          const option = optionsOf(item, s.index).find((o) => o.hash === c.hash);
           if (s.current?.hash === c.hash) eligible.push({ socket: s, hash: c.hash });
           else if (option?.canInsert) eligible.push({ socket: s, hash: c.hash });
-          else if (option) blocked = true;
+          else if (option) blocked.push(option);
         }
       }
       if (!eligible.length) {
-        fail(
-          !fits
-            ? `no ${req.socket !== undefined ? `socket ${req.socket}` : 'socket'} on this item accepts it. Changeable sockets: ${describe(changeable)}`
-            : blocked
-              ? `it is listed for this item but can't be inserted right now (not unlocked, or blocked by the game)`
-              : `it isn't one of the options available on this item (not unlocked, or not part of this item's roll)`,
-        );
+        const reasons = [...new Set(blocked.flatMap((o) => o.reasons))];
+        if (!fits) fail(`no ${req.socket !== undefined ? `socket ${req.socket}` : 'socket'} on this item accepts it. Changeable sockets: ${describe(changeable)}`);
+        else if (reasons.length) fail(`can't be inserted: ${reasons.join('; ')}${unconfirmedNote(defs, blocked)}`);
+        else if (blocked.length) fail(`it is listed for this item but can't be inserted right now (not unlocked, or blocked by the game)${unconfirmedNote(defs, blocked)}`);
+        else fail(`it isn't one of the options available on this item (not unlocked, or not part of this item's roll)`);
         continue;
       }
       const already = eligible.find((e) => e.socket.current?.hash === e.hash);
@@ -319,6 +389,7 @@ export function planPlugChanges(inv: InventoryModel, defs: Defs, requests: PlugR
       energy = { ...state.energy };
     }
     plan.changes.push({
+      request: index,
       item,
       characterId,
       socketIndex: socket.index,

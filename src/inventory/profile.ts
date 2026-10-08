@@ -64,12 +64,12 @@ export class ProfileService {
   /** Call after any write action so the next read sees fresh data. */
   invalidate(): void {
     this.cached = undefined;
-    this.vendorSales.clear();
   }
 
   /**
-   * A character's sale entries at one vendor, cached for a few minutes and shared by concurrent
-   * callers. A failed fetch is not cached. `fresh` skips the cache (e.g. right after a purchase).
+   * A character's sale entries at one vendor, cached for a couple of minutes and shared by concurrent
+   * callers. A failed fetch is not cached. Our own writes don't change what was bought, so only
+   * `fresh` (e.g. right after a purchase, or before refusing a plug) skips the cache.
    */
   characterVendorSales(characterId: string, vendorHash: number, fresh = false): Promise<DestinyVendorSaleItemComponent[]> {
     const key = `${characterId}:${vendorHash}`;
