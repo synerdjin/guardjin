@@ -188,16 +188,7 @@ export class Defs {
 
   /** Human-readable description for a plug: its own description, else its displayable sandbox perks. */
   describePlug(def: DestinyInventoryItemDefinition | undefined): string {
-    if (!def) return '';
-    const own = def.displayProperties?.description?.trim();
-    if (own) return own;
-    const parts: string[] = [];
-    for (const p of def.perks ?? []) {
-      const perk = this.sandboxPerk(p.perkHash);
-      const text = perk?.isDisplayable ? perk.displayProperties?.description?.trim() : undefined;
-      if (text) parts.push(text);
-    }
-    return parts.join(' ');
+    return def ? plugText(def, (h) => this.sandboxPerk(h)) : '';
   }
 
   /** Case-insensitive substring search over item names (items include perks, mods, aspects, fragments...). */
@@ -233,6 +224,22 @@ export class Defs {
       .all(`%${query.toLowerCase()}%`, limit) as { json: string | Uint8Array }[];
     return rows.map((r) => JSON.parse(typeof r.json === 'string' ? r.json : decoder.decode(r.json)) as T);
   }
+}
+
+type PlugTextSource = { displayProperties?: { description?: string }; perks?: { perkHash: number }[] };
+type PerkTextSource = { isDisplayable?: boolean; displayProperties?: { description?: string } };
+
+/** The text the game shows for a plug: its own description, else its displayable sandbox perks' descriptions. */
+export function plugText(def: PlugTextSource, perk: (hash: number) => PerkTextSource | undefined): string {
+  const own = def.displayProperties?.description?.trim();
+  if (own) return own;
+  return (def.perks ?? [])
+    .map((p) => {
+      const d = perk(p.perkHash);
+      return d?.isDisplayable ? d.displayProperties?.description?.trim() : undefined;
+    })
+    .filter(Boolean)
+    .join(' ');
 }
 
 /** Creates the name index used by searchItems. Runs once per manifest version. */

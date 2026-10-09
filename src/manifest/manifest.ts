@@ -16,6 +16,14 @@ interface CurrentManifest {
 
 const log = (msg: string) => console.error(`[guardjin] ${msg}`);
 
+/** A new manifest has been downloaded; the previous file is still on disk until the callback returns. */
+export interface ManifestReplacement {
+  version: string;
+  previousVersion: string;
+  previousFile: string;
+  file: string;
+}
+
 /**
  * Keeps a local copy of Bungie's world-content SQLite database up to date and opens it.
  * The database is re-downloaded only when Bungie publishes a new manifest version.
@@ -23,6 +31,10 @@ const log = (msg: string) => console.error(`[guardjin] ${msg}`);
 export class ManifestLoader {
   private loading: Promise<Defs> | undefined;
   private readonly dir: string;
+  /** Called once per game update, before the old database is deleted. A failure is logged and never blocks the load. */
+  onUpdate?: (update: ManifestReplacement) => void;
+  /** Settles once the work after a download (onUpdate, removing old files) is done. */
+  updated: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly config: Config,
@@ -78,11 +90,35 @@ export class ManifestLoader {
 
     const next: CurrentManifest = { version: remote.version, language: lang, file };
     writeFileSync(currentFile, JSON.stringify(next, null, 2));
-    for (const f of readdirSync(this.dir)) {
-      if (f.startsWith('world_') && f !== file) rmSync(join(this.dir, f), { force: true });
-    }
+    const previous = current?.language === lang && current.file !== file && existsSync(join(this.dir, current.file)) ? current : undefined;
     log('manifest ready');
-    return this.open(next);
+    const defs = this.open(next);
+    // Comparing with the previous version takes a few seconds; do it after the caller has the manifest.
+    this.updated = new Promise((resolve) =>
+      setImmediate(() => {
+        this.afterUpdate(next, previous);
+        resolve();
+      }),
+    );
+    return defs;
+  }
+
+  /** Reports the update to onUpdate while the previous database still exists, then deletes old databases. Never throws. */
+  private afterUpdate(next: CurrentManifest, previous: CurrentManifest | undefined): void {
+    if (previous && this.onUpdate) {
+      try {
+        this.onUpdate({ version: next.version, previousVersion: previous.version, previousFile: join(this.dir, previous.file), file: join(this.dir, next.file) });
+      } catch (err) {
+        log(`could not compare manifest ${previous.version} with ${next.version}: ${(err as Error).message}`);
+      }
+    }
+    try {
+      for (const f of readdirSync(this.dir)) {
+        if (f.startsWith('world_') && f !== next.file) rmSync(join(this.dir, f), { force: true });
+      }
+    } catch (err) {
+      log(`could not remove old manifest files: ${(err as Error).message}`);
+    }
   }
 
   private open(m: CurrentManifest): Defs {

@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { yourGameUpdates } from '../builds/patchChanges.js';
 import type { Context } from '../context.js';
 import type { InventoryModel, Item } from '../inventory/model.js';
 import { buildLoadouts } from '../loadouts/loadouts.js';
@@ -57,7 +58,7 @@ export function registerTrackingTools(server: McpServer, ctx: Context): void {
       description:
         'What changed in your inventory over time, from guardjin\'s local history (Bungie\'s API has no acquisition dates): new weapons and armor since a date, items that are gone (dismantled), ' +
         'lock/masterwork/tier/power changes, character power and currency changes. History starts the first time guardjin reads your inventory; for older drops use `afterItem` ' +
-        '(instance ids grow over time, so anything with a larger id dropped later) or `newest`. Without arguments it reports changes since the last whats_new call.',
+        '(instance ids grow over time, so anything with a larger id dropped later) or `newest`. Without arguments it reports changes since the last whats_new call. Also lists game updates in that period that changed the text or stats of a perk, mod, aspect or fragment you use (gameUpdates).',
       inputSchema: {
         since: z.string().optional().describe('Date or date-time, e.g. "2026-09-24"'),
         afterItem: z.string().optional().describe('Instance id of an item; lists items that dropped after it'),
@@ -100,6 +101,7 @@ export function registerTrackingTools(server: McpServer, ctx: Context): void {
         changed: diff?.changed.length ? diff.changed : undefined,
         power: diff?.power.length ? diff.power : undefined,
         currencies: diff?.currencies.length ? diff.currencies : undefined,
+        gameUpdates: yourGameUpdates(store, inv, defs, from),
       });
     }),
   );

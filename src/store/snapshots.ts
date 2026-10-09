@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { InventoryModel, Item } from '../inventory/model.js';
 import { locationLabel } from '../inventory/model.js';
+import type { PatchChange } from '../manifest/diff.js';
 
 /** A full snapshot is written at most this often (or when asked); first/last-seen is tracked on every read. */
 export const SNAPSHOT_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -20,7 +21,22 @@ const MIGRATIONS = [
    );
    CREATE TABLE snapshot_characters (snapshot_id INTEGER NOT NULL, character_id TEXT NOT NULL, class_name TEXT, light INTEGER, PRIMARY KEY (snapshot_id, character_id));
    CREATE TABLE snapshot_currencies (snapshot_id INTEGER NOT NULL, name TEXT NOT NULL, quantity INTEGER, PRIMARY KEY (snapshot_id, name));`,
+  `CREATE TABLE manifest_changes (
+     version TEXT NOT NULL, prev_version TEXT NOT NULL, hash INTEGER NOT NULL, name TEXT, text_before TEXT, text_after TEXT, changed_at INTEGER NOT NULL,
+     PRIMARY KEY (version, hash)
+   );`,
 ];
+
+/** Game updates whose plug changes are kept. */
+const KEPT_UPDATES = 5;
+
+/** The plug changes one game update made, as recorded when guardjin downloaded its manifest. */
+export interface ManifestUpdate {
+  version: string;
+  previousVersion: string;
+  at: number;
+  changes: PatchChange[];
+}
 
 export interface SeenItem {
   instanceId: string;
@@ -223,6 +239,44 @@ export class SnapshotStore {
     const added = (this.db.prepare('SELECT * FROM items_seen WHERE baseline = 0 AND first_seen_at > ? ORDER BY first_seen_at DESC').all(since) as Record<string, unknown>[]).map(toSeen);
     const gone = (this.db.prepare('SELECT * FROM items_seen WHERE gone_at IS NOT NULL AND gone_at > ? ORDER BY gone_at DESC').all(since) as Record<string, unknown>[]).map(toSeen);
     return { added, gone };
+  }
+
+  /** Records what a new manifest version changed in plug text and stats; keeps only the last few updates. */
+  recordManifestChanges(version: string, previousVersion: string, changes: PatchChange[], now = Date.now()): void {
+    const insert = this.db.prepare(
+      'INSERT OR REPLACE INTO manifest_changes (version, prev_version, hash, name, text_before, text_after, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    this.db.exec('BEGIN');
+    try {
+      for (const c of changes) insert.run(version, previousVersion, c.hash, c.name, c.before, c.after, now);
+      this.db
+        .prepare(
+          `DELETE FROM manifest_changes WHERE version NOT IN
+             (SELECT version FROM manifest_changes GROUP BY version ORDER BY MAX(changed_at) DESC LIMIT ?)`,
+        )
+        .run(KEPT_UPDATES);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** Game updates recorded after `since`, newest first. */
+  manifestUpdates(since = 0): ManifestUpdate[] {
+    const rows = this.db
+      .prepare(
+        `SELECT version, prev_version AS previousVersion, changed_at AS at, hash, name, text_before AS before, text_after AS after
+         FROM manifest_changes WHERE changed_at > ? ORDER BY changed_at DESC`,
+      )
+      .all(since) as unknown as (Omit<ManifestUpdate, 'changes'> & PatchChange)[];
+    const updates = new Map<string, ManifestUpdate>();
+    for (const { version, previousVersion, at, ...change } of rows) {
+      let update = updates.get(version);
+      if (!update) updates.set(version, (update = { version, previousVersion, at, changes: [] }));
+      update.changes.push(change);
+    }
+    return [...updates.values()];
   }
 
   close(): void {
