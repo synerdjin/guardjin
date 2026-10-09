@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { getPublicMilestones } from 'bungie-api-ts/destiny2';
 import { z } from 'zod';
 import { weaponChampion } from '../builds/champions.js';
+import { yourGameUpdates, type PatchReport } from '../builds/patchChanges.js';
 import { characterStats, equippedOn } from '../builds/spec.js';
 import { unwrap } from '../bungie/http.js';
 import type { Context } from '../context.js';
@@ -26,7 +27,8 @@ export function registerBriefTools(server: McpServer, ctx: Context): void {
       title: 'Session brief',
       description:
         'Start-of-session overview in one call: every character\'s power and subclass; the main character\'s equipped weapons (with champion types), exotic, artifact and stats; key currencies; vault and postmaster space; ' +
-        'this week\'s featured activities; whether Xûr is here and whether any vendor sells an item on your wanted list; and what changed since the last brief (new drops, dismantles, power and currency changes). ' +
+        'this week\'s featured activities; whether Xûr is here and whether any vendor sells an item on your wanted list; what changed since the last brief (new drops, dismantles, power and currency changes); ' +
+        'and any game update that changed the text or stats of a perk, mod, aspect or fragment you use (gameUpdates). ' +
         'Call this first in a Destiny conversation, then drill down with the specific tools.',
       inputSchema: {
         character: z.string().optional().describe('Character to detail (default: most recently played)'),
@@ -76,9 +78,12 @@ export function registerBriefTools(server: McpServer, ctx: Context): void {
       const wanted = offers ? await checkWanted(ctx, defs, offers).catch(() => undefined) : undefined;
 
       let sinceLast: Record<string, unknown> | undefined;
+      let gameUpdates: PatchReport[] | undefined;
       const store = ctx.store;
       if (store) {
         const lastBrief = Number(store.getMeta('last_brief') ?? 0) || undefined;
+        // Game updates since the last brief that changed a plug you use; whats_new with `since` shows them again.
+        gameUpdates = yourGameUpdates(store, inv, defs, lastBrief);
         if (lastBrief) {
           const { added, gone } = store.changesSince(lastBrief);
           const snap = store.snapshotAt(lastBrief);
@@ -116,6 +121,7 @@ export function registerBriefTools(server: McpServer, ctx: Context): void {
         weekly,
         xur: offers ? vendorPresent(offers, 'Xûr') : undefined,
         wantedForSale: wanted?.hits.length ? wanted.hits.map((h) => `${h.name}: ${h.offers.map((o) => `${o.vendor}${o.cost ? ` (${o.cost.join(', ')})` : ''}`).join('; ')}`) : undefined,
+        gameUpdates,
         sinceLastBrief: sinceLast,
       });
     }),

@@ -6,6 +6,7 @@ import { CommunityDataService } from './community/data.js';
 import { createHttpClient } from './bungie/http.js';
 import { loadConfig, type Config } from './config.js';
 import { ProfileService } from './inventory/profile.js';
+import { diffManifestFiles } from './manifest/diff.js';
 import { ManifestLoader } from './manifest/manifest.js';
 import { buildWallet } from './progress/currencies.js';
 import { SnapshotStore } from './store/snapshots.js';
@@ -39,6 +40,7 @@ export function createContext(config: Config = loadConfig()): Context {
       store.observe(model);
       store.maybeSnapshot(model, { manifestVersion: defs.version, currencies: buildWallet(model.raw, defs).currencies });
     };
+    manifest.onUpdate = (u) => store.recordManifestChanges(u.version, u.previousVersion, diffManifestFiles(u.previousFile, u.file));
   }
   return { config, http, auth, account, manifest, profile, wishlist, community, store };
 }

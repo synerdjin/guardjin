@@ -45,7 +45,7 @@ Game data comes from Bungie's manifest and is read at runtime (stat names, sets,
 
    The server reads `.env` from the project folder, so you don't need to add env vars to the client config (you can if you prefer).
 
-On first start, the server downloads the Destiny manifest (about 37 MB) into `~/.guardjin/manifest/`. It downloads again only when Bungie ships a game update.
+On first start, the server downloads the Destiny manifest (about 37 MB) into `~/.guardjin/manifest/`. It downloads again only when Bungie ships a game update. Before replacing the old copy, guardjin compares the text and stats of every perk, mod, aspect and fragment and keeps what changed (the last five updates) in `guardjin.db`, so `session_brief` can tell you when an update touched your loadouts or worn gear.
 
 ## Try it
 
@@ -72,7 +72,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 
 | Tool | What it does |
 | --- | --- |
-| `session_brief` | One-call start of a session: characters, the main character's gear/artifact/stats, key currencies, vault and postmaster, this week's activities, Xûr and wanted-item hits, changes since the last brief |
+| `session_brief` | One-call start of a session: characters, the main character's gear/artifact/stats, key currencies, vault and postmaster, this week's activities, Xûr and wanted-item hits, changes since the last brief, and game updates that changed a perk, mod, aspect or fragment you use |
 | `auth_status` | Config and login status, linked Destiny account |
 | `list_characters` | Characters with class, power, subclass and stat totals |
 | `search_inventory` | Filters gear by name, slot, class, rarity, location, perk, element, min stats and tier; each result has a `label` (power, tier, standout perks or armor stats) that tells copies apart |
@@ -92,7 +92,7 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 | `find_duplicates` | Duplicate weapons (reissues grouped) and exotic armor, with wishlist verdicts |
 | `suggest_cleanup` | Ranked dismantle candidates with reasons and confidence (higher-tier copies are kept first) |
 | `check_wishlist` | Wishlist verdicts for one weapon or all weapons |
-| `whats_new` | New drops, dismantled items, lock/masterwork/tier/power, character power and currency changes since a date, from local history; `afterItem` / `newest` for older drops |
+| `whats_new` | New drops, dismantled items, lock/masterwork/tier/power, character power and currency changes since a date, from local history; `afterItem` / `newest` for older drops; also game updates in that period that changed a perk, mod, aspect or fragment you use |
 | `triage_drops` | Applies your keep rules (`~/.guardjin/keep-rules.json`) to unlocked gear: keep (with ids to lock), dismantle, or review, with the rule behind each |
 | `get_quests` | Quests and bounties with objective progress, quest step, rewards, expiry and tracked state |
 | `list_loadouts` | Saved in-game loadouts per character, with items, saved mods/aspects/fragments, active state, items that no longer exist, and free slots |
@@ -154,7 +154,7 @@ src/
   builds/optimizer.ts  armor search: Pareto pruning + branch-and-bound over 5 slots, stat-mod assignment
   builds/champions.ts  champion coverage: breaker types, hidden frame traits, "Strong against" text, stun verbs
   vault/               analysis (capacity, duplicates, dominance, cleanup), keep-rule triage, wishlist parser/matcher, transfer/equip/lock
-  store/snapshots.ts   local history in ~/.guardjin/guardjin.db: first/last seen per item, periodic full snapshots
+  store/snapshots.ts   local history in ~/.guardjin/guardjin.db: first/last seen per item, periodic full snapshots, plug changes per game update
   community/data.ts    cached DIM community data (extra champion types, drop sources)
   tools/               MCP tool definitions, one file per group
   prompts/             suggest_build and clean_vault workflow prompts
