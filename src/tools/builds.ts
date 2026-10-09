@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { optimizeArmor, type ArmorCandidate } from '../builds/optimizer.js';
 import { CHAMPIONS, CHAMPION_NAMES, championCoverage, loadOverrides, ownedChampionWeapons } from '../builds/champions.js';
+import { auditSavedLoadout } from '../builds/loadoutAudit.js';
 import { auditBuild, BuildSpecSchema, exportBuild } from '../builds/spec.js';
 import { expandHome } from '../config.js';
 import { matchByName } from '../names.js';
@@ -243,24 +244,41 @@ export function registerBuildTools(server: McpServer, ctx: Context): void {
     {
       title: 'Audit build',
       description:
-        'Checks a character against a build spec (from export_build or hand-written): subclass pieces, exotic, armor pieces and set bonuses, stat targets, armor and weapon mods, selected weapon perks, masterworks, ' +
-        'power-10 legacy weapons, artifact and artifact perks, and champion coverage. Returns the differences plus ready-made equip_items ids and apply_plugs changes (nothing is changed; confirm with the user and dry-run first).',
+        'Checks a character against a saved in-game loadout (`loadout`: its name or slot index from list_loadouts) or against a build spec file (`spec`, from export_build or hand-written); pass one of them. ' +
+        'For a loadout it reports what is wrong with the saved slot (items that no longer exist, unmasterworked pieces, power-10 legacy weapons, empty armor mod slots with energy to spare, unused fragment slots, ' +
+        'aspects and fragments not bought yet) and how what the character wears now differs from it, with `resaveSuggested` when the worn setup was changed after saving (e.g. a swapped mod), so you know when the slot needs re-saving. ' +
+        'For a spec it checks subclass pieces, exotic, armor pieces and set bonuses, stat targets, armor and weapon mods, selected weapon perks, masterworks, power-10 legacy weapons, artifact and artifact perks, and champion coverage. ' +
+        'Returns the differences plus ready-made equip_items ids and apply_plugs changes (nothing is changed; confirm with the user and dry-run first). Bungie\'s data can lag a change by a minute or two.',
       inputSchema: {
-        spec: z.string().describe('Spec file (absolute path, or a name/file in the builds folder)'),
-        character: z.string().optional().describe('Character id or class name; default is the spec\'s class, else the most recently played'),
+        loadout: z.union([z.number().int().min(0), z.string()]).optional().describe('A saved in-game loadout: slot index or name (use `character` if several characters have one with that name)'),
+        spec: z.string().optional().describe('Spec file (absolute path, or a name/file in the builds folder)'),
+        character: z.string().optional().describe("Character id or class name; for a spec the default is the spec's class, else the most recently played; for a loadout, the owner"),
+        refresh: z.boolean().optional().describe('With loadout: re-read which aspects and fragments are bought (cached for 2 minutes), e.g. right after buying one'),
       },
       annotations: READ_ONLY,
     },
-    safe(async ({ spec: ref, character }) => {
-      const file = findSpec(ctx.config.buildsDir, ref);
-      const parsed = BuildSpecSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')));
-      if (!parsed.success) throw new UserError(`${file} is not a valid build spec: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
-      const spec = parsed.data;
-      const inv = await ctx.profile.inventory(true);
-      const defs = await ctx.manifest.load();
-      const c = resolveCharacter(inv, character ?? spec.class);
-      const extras = { extendedBreaker: await ctx.community.get<Record<string, number>>('extendedBreaker'), overrides: loadOverrides() };
-      return ok({ file, build: spec.name, character: c.className, ...auditBuild(inv, defs, c, spec, extras) });
+    safe(async ({ loadout: loadoutRef, spec: ref, character, refresh }) => {
+      if ((loadoutRef === undefined) === (ref === undefined)) throw new UserError('Pass either `loadout` (a saved in-game loadout) or `spec` (a build spec file), not both or neither.');
+
+      if (loadoutRef === undefined) {
+        // Check the file before the (slow) forced profile read.
+        const file = findSpec(ctx.config.buildsDir, ref!);
+        let json: unknown;
+        try {
+          json = JSON.parse(readFileSync(file, 'utf8'));
+        } catch (err) {
+          throw new UserError(`${file} is not valid JSON: ${(err as Error).message}`);
+        }
+        const parsed = BuildSpecSchema.safeParse(json);
+        if (!parsed.success) throw new UserError(`${file} is not a valid build spec: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+        const spec = parsed.data;
+        const [inv, defs, extendedBreaker] = await Promise.all([ctx.profile.inventory(true), ctx.manifest.load(), ctx.community.get<Record<string, number>>('extendedBreaker')]);
+        const c = resolveCharacter(inv, character ?? spec.class);
+        return ok({ file, build: spec.name, character: c.className, ...auditBuild(inv, defs, c, spec, { extendedBreaker, overrides: loadOverrides() }) });
+      }
+
+      const [inv, defs] = await Promise.all([ctx.profile.inventory(true), ctx.manifest.load()]);
+      return ok(await auditSavedLoadout(ctx.profile, inv, defs, loadoutRef, { characterId: character ? resolveCharacter(inv, character).id : undefined, refresh }));
     }),
   );
 }

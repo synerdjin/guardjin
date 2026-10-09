@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { getPublicMilestones } from 'bungie-api-ts/destiny2';
 import { z } from 'zod';
 import { weaponChampion } from '../builds/champions.js';
-import { characterStats } from '../builds/spec.js';
+import { characterStats, equippedOn } from '../builds/spec.js';
 import { unwrap } from '../bungie/http.js';
 import type { Context } from '../context.js';
 import { ARMOR_STATS } from '../inventory/constants.js';
@@ -37,13 +37,12 @@ export function registerBriefTools(server: McpServer, ctx: Context): void {
       const inv = await ctx.profile.inventory(true);
       const defs = await ctx.manifest.load();
       const main = character ? inv.characters.find((c) => c.id === character || c.classType === character.toLowerCase()) ?? inv.characters[0] : inv.characters[0];
-      const equippedOn = (id: string) => inv.items.filter((i) => i.equipped && i.location.type === 'character' && i.location.characterId === id);
 
       const characters = inv.characters.map((c) => {
-        const sub = equippedOn(c.id).find((i) => i.kind === 'subclass');
+        const sub = equippedOn(inv, c.id).find((i) => i.kind === 'subclass');
         return { class: c.className, id: c.id, power: c.light, subclass: sub?.name, lastPlayed: c.lastPlayed };
       });
-      const eq = main ? equippedOn(main.id) : [];
+      const eq = main ? equippedOn(inv, main.id) : [];
       const stats = main ? characterStats(inv, main.id) : undefined;
       const statNames = Object.fromEntries(ARMOR_STATS.map((s) => [s.key, defs.stat(s.hash)?.displayProperties.name ?? s.key]));
       const sub = eq.find((i) => i.kind === 'subclass');

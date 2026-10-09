@@ -9,6 +9,10 @@ import { actingCharacter, namedStats, type InventoryModel, type Item } from './m
 /** Stat on an aspect that grants fragment slots (2 or 3). */
 export const FRAGMENT_CAPACITY_STAT = 2223994109;
 
+/** How many fragment slots an aspect opens, or undefined for any other plug. */
+export const fragmentCapacity = (def: DestinyInventoryItemDefinition | undefined) =>
+  def?.investmentStats?.find((s) => s.statTypeHash === FRAGMENT_CAPACITY_STAT)?.value || undefined;
+
 /** Plug categories of aspects and fragments (Stasis calls them "totems" and "trinkets"), e.g. hunter.void.aspects, shared.prism.fragments. */
 export const SUBCLASS_STAT_PLUG = /\.(aspects|totems|fragments|trinkets)$/;
 
@@ -99,12 +103,13 @@ function toSubclassPlug(def: DestinyInventoryItemDefinition, defs: Defs, classTy
     name: def.displayProperties.name,
     description: defs.describePlug(def),
     statBonuses: subclassPlugStats(def, defs, classType).stats,
-    fragmentSlots: def.investmentStats?.find((s) => s.statTypeHash === FRAGMENT_CAPACITY_STAT)?.value || undefined,
+    fragmentSlots: fragmentCapacity(def),
     ...ownership?.get(def.hash),
   };
 }
 
-const isEmptyPlug = (def: DestinyInventoryItemDefinition | undefined) =>
+/** No plug, or an "Empty …" placeholder. */
+export const isEmptyPlug = (def: DestinyInventoryItemDefinition | undefined) =>
   !def || !def.displayProperties.name || def.displayProperties.name.startsWith('Empty ');
 
 /**
@@ -230,6 +235,12 @@ export function characterSubclasses(inv: InventoryModel, defs: Defs, characterId
   return mine.filter((i) => normName(i.name).includes(q) || element(i).includes(q));
 }
 
+/** Fragments vs the slots the aspects open (available is undefined when none of the aspects says). */
+export function fragmentSlotUse(aspects: Pick<SubclassPlug, 'fragmentSlots'>[], fragments: unknown[]): { used: number; available?: number } {
+  const unknown = aspects.length > 0 && aspects.every((a) => a.fragmentSlots === undefined);
+  return { used: fragments.length, available: unknown ? undefined : aspects.reduce((sum, a) => sum + (a.fragmentSlots ?? 0), 0) };
+}
+
 export interface PlannedSubclassSetup {
   aspects: SubclassPlug[];
   fragments: SubclassPlug[];
@@ -274,9 +285,7 @@ export function planSubclassSetup(
 
   const bonus = ARMOR_STATS.map(() => 0);
   for (const p of [...aspects, ...fragments]) plugStatBonus(defs.item(p.hash), classType).forEach((v, i) => (bonus[i] += v));
-  const unknownSlots = aspects.length > 0 && aspects.every((a) => a.fragmentSlots === undefined);
-  const available = unknownSlots ? undefined : aspects.reduce((sum, a) => sum + (a.fragmentSlots ?? 0), 0);
-  const used = fragments.length;
+  const { used, available } = fragmentSlotUse(aspects, fragments);
   const unowned = [...aspects, ...fragments].filter((p) => p.owned === false || p.locked).map((p) => ({ name: p.name, price: p.price, locked: p.locked }));
   return {
     aspects,

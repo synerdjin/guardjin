@@ -48,6 +48,25 @@ export function resolveSlot(inv: InventoryModel, defs: Defs, characterId: string
   throw new UserError(`No saved loadout is named "${text}". Saved: ${saved.map((l) => `${l.index}: ${l.name}`).join(', ') || 'none'}.`);
 }
 
+/**
+ * A saved loadout by slot index or name, for reading. With a character, only its slots; without one, a name
+ * is looked up on every character (and must be unique) and an index means the most recently played character.
+ */
+export function findLoadoutSlot(inv: InventoryModel, defs: Defs, ref: string | number, characterId?: string): LoadoutSlot & { loadout: Loadout } {
+  const text = String(ref).trim();
+  if (characterId || /^\d+$/.test(text)) {
+    const slot = resolveSlot(inv, defs, characterId ?? inv.characters[0]?.id ?? '', ref);
+    if (!slot.loadout) throw new UserError(`Loadout slot ${slot.index} is empty.`);
+    return { ...slot, loadout: slot.loadout };
+  }
+  const all = buildLoadouts(inv, defs);
+  const named = all.filter((l) => l.name.toLowerCase() === text.toLowerCase());
+  const who = (l: Loadout) => `${inv.characters.find((c) => c.id === l.characterId)?.className} (slot ${l.index})`;
+  if (named.length > 1) throw new UserError(`Several characters have a loadout named "${ref}": ${named.map(who).join(', ')}. Pass character.`);
+  if (!named.length) throw new UserError(`No saved loadout is named "${ref}". Saved: ${all.map((l) => `${l.name} on ${who(l)}`).join('; ') || 'none'}.`);
+  return { characterId: named[0].characterId, index: named[0].index, loadout: named[0] };
+}
+
 export interface Identifiers {
   nameHash: number;
   iconHash: number;
