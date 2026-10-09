@@ -20,14 +20,8 @@ import { loadConfig, redirectUri } from '../config.js';
 const TIMEOUT_MS = 5 * 60_000;
 
 function openBrowser(url: string): void {
-  const [cmd, args] =
-    process.platform === 'win32'
-      ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
-      : process.platform === 'darwin'
-        ? ['open', [url]]
-        : ['xdg-open', [url]];
   try {
-    spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
+    spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
   } catch {
     // The URL is printed too; opening the browser is best effort.
   }
