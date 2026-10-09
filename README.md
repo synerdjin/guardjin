@@ -8,6 +8,12 @@ An MCP server for **Destiny 2**. It connects Claude (Claude Code, Claude Desktop
 
 Game data comes from Bungie's manifest and is read at runtime (stat names, sets, perks, bucket sizes), so the server keeps working as the game changes.
 
+## Requirements
+
+- macOS.
+- Node.js 22.13 or newer (the server uses the built-in `node:sqlite`).
+- A Bungie account with a Destiny 2 character, and a free Bungie app registration (below).
+
 ## One-time setup
 
 1. **Register a Bungie app** at <https://www.bungie.net/en/Application> → *Create New App*:
@@ -25,27 +31,27 @@ Game data comes from Bungie's manifest and is read at runtime (stat names, sets,
    ```
 
    `npm run auth` opens Bungie's consent page. After you approve, your browser is redirected to `https://localhost:7777/callback`. It will warn about the self-signed certificate, which is expected; continue to localhost. If the redirect page doesn't load, paste the URL from the address bar into the terminal instead. Tokens are saved to `~/.guardjin/tokens.json` and refresh automatically.
-4. **Register the server with your MCP client.**
+4. **Register the server with your MCP client.** Use the absolute path of the project folder (`pwd` inside it prints it).
 
    Claude Code:
 
    ```bash
-   claude mcp add guardjin -s user -- node C:/Users/genem/Code/guardjin/dist/index.js
+   claude mcp add guardjin -s user -- node /Users/you/Code/guardjin/dist/index.js
    ```
 
-   Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
+   Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
    ```json
    {
      "mcpServers": {
-       "guardjin": { "command": "node", "args": ["C:/Users/genem/Code/guardjin/dist/index.js"] }
+       "guardjin": { "command": "node", "args": ["/Users/you/Code/guardjin/dist/index.js"] }
      }
    }
    ```
 
-   The server reads `.env` from the project folder, so you don't need to add env vars to the client config (you can if you prefer).
+   The server reads `.env` from the project folder, so you don't need to add env vars to the client config (you can if you prefer). After `npm run build` on a new version, reconnect the server in your client so it picks up the new code.
 
-On first start, the server downloads the Destiny manifest (about 37 MB) into `~/.guardjin/manifest/`. It downloads again only when Bungie ships a game update. Before replacing the old copy, guardjin compares the text and stats of every perk, mod, aspect and fragment and keeps what changed (the last five updates) in `guardjin.db`, so `session_brief` can tell you when an update touched your loadouts or worn gear.
+On first start, the server downloads the Destiny manifest into `~/.guardjin/manifest/` (the unpacked database is about 360 MB). It downloads again only when Bungie ships a game update. Before replacing the old copy, guardjin compares the text and stats of every perk, mod, aspect and fragment and keeps what changed (the last five updates) in `guardjin.db`, so `session_brief` can tell you when an update touched your loadouts or worn gear.
 
 ## Try it
 
@@ -64,6 +70,9 @@ On first start, the server downloads the Destiny manifest (about 37 MB) into `~/
 - *"How many Vault of Glass clears do I have, and what's my fastest?"*
 - *"What season pass level am I, and what weekly milestones are left?"*
 - *"Which weapon patterns can I craft?"*
+- *"Audit my Beta loadout: anything missing, unmasterworked, or changed since I saved it?"* (`audit_build`)
+- *"Can I plan a build around aspects I haven't equipped yet, and which of them haven't I bought?"* (`optimize_armor`, `get_subclass_options`)
+- *"Did the last patch change anything I use?"* (`session_brief`, `whats_new`)
 - *"Build me a grenade Warlock, put the stat mods on, and save it as my Raid loadout."*
 - *"Move all my Titan armor from my Hunter to the vault."*
 - *"Lock everything the wishlist marks as a god roll."*
@@ -149,21 +158,34 @@ src/
   config.ts            env/.env loading, data directory
   cli/auth.ts          `npm run auth` OAuth login
   bungie/              HTTP client (API key, token, throttling, action pacing), OAuth tokens, account lookup
-  manifest/            downloads the world SQLite DB per game version; name index; typed definition lookups
-  inventory/           GetProfile → normalized items (Armor 3.0 stat math, weapon perk columns), subclasses
-  builds/optimizer.ts  armor search: Pareto pruning + branch-and-bound over 5 slots, stat-mod assignment
-  builds/champions.ts  champion coverage: breaker types, hidden frame traits, "Strong against" text, stun verbs
+  manifest/            downloads the world SQLite DB per game version; name index; typed definition lookups; diff.ts compares two versions' plug text and stats
+  inventory/           GetProfile → normalized items (Armor 3.0 stat math, weapon perk columns), subclasses and fragment stats
+  sockets/             socket and plug reading (plugs.ts), planning and applying plug changes (apply.ts)
+  loadouts/            saved in-game loadouts, slot lookup, equip/save/rename/clear
+  builds/              armor optimizer (Pareto pruning + branch-and-bound over 5 slots, stat-mod assignment); champion coverage (breaker types, hidden frame traits, "Strong against" text, stun verbs); build specs (spec.ts) and their audit; saved-loadout audit (loadoutAudit.ts); patch changes in your gear (patchChanges.ts)
   vault/               analysis (capacity, duplicates, dominance, cleanup), keep-rule triage, wishlist parser/matcher, transfer/equip/lock
+  world/               activities, weekly rotation, vendors, subclass ownership from the Aspects and Fragments vendors
+  progress/            artifact, collections, craftables, currencies, progression, commendations
+  quests/              quests and bounties
+  history/             activity history, career and weapon stats
   store/snapshots.ts   local history in ~/.guardjin/guardjin.db: first/last seen per item, periodic full snapshots, plug changes per game update
   community/data.ts    cached DIM community data (extra champion types, drop sources)
   tools/               MCP tool definitions, one file per group
   prompts/             suggest_build and clean_vault workflow prompts
+data/champion-overrides.json   hand-maintained champion corrections (per item, per plug, extra stun verbs)
 ```
+
+### What is stored on your machine
+
+Everything lives in `GUARDJIN_HOME` (`~/.guardjin` by default): `tokens.json` (OAuth tokens), `manifest/` (the game database), `guardjin.db` (inventory history and patch changes), `keep-rules.json` (triage rules, created on first use), `builds/` (build specs), `wishlist/` and `community/` (downloaded caches). guardjin only talks to Bungie (API and manifest download) and downloads the wishlist and DIM's community data (from GitHub by default); your data is not sent anywhere else.
 
 A few details:
 
 - **Armor stats.** The optimizer uses each piece's rolled stats (its `armor_stats` plugs) plus tuning and a full masterwork, which is +5 to the three lowest stats, per the in-game text. Armor mods are ignored so pieces are compared fairly. Stat mods are added back as +10 (major) or +5 (minor), one per piece.
 - **Wishlist matching** compares perk *names*, so enhanced perks match their base versions. It checks every selectable option on the weapon, not only the perk currently selected.
+- **Aspects and fragments** are checked against the Aspects and Fragments vendors, because Bungie's profile data about what you may insert is unreliable. `get_subclass_options` shows what you have bought; `apply_plugs` refuses an unbought one (with its price) and tries a bought one even when the profile still blocks it. Vendor data is cached for two minutes; tools that plan a change read it fresh.
+- **Saved-loadout audit.** `audit_build({ loadout })` reports *gaps* (what is wrong with the saved loadout) apart from *drift* (how what you wear differs from the slot). Shaders and ornaments are not drift.
+- **Patch changes.** When a new manifest arrives, plugs whose text or stats changed are recorded; `session_brief` and `whats_new` report the ones in your loadouts, worn gear or owned exotics as `gameUpdates`. Plugs added or removed by an update are not listed, and nothing is reported until the first update after you install this version.
 - **Dominated armor:** another piece of the same class and slot (and the same exotic) that has at least the same tier, at least as good a set, and every masterworked stat ≥ this one.
 
 ## Development
@@ -177,8 +199,8 @@ npm run inspect     # MCP Inspector against dist/index.js
 
 ### Adding a feature
 
-1. Put the logic in a module under `src/` (for example `src/vendors/`), taking `InventoryModel` and `Defs` as inputs so it can be tested without the network.
+1. Put the logic in a module under `src/` (for example `src/world/`), taking `InventoryModel` and `Defs` as inputs so it can be tested without the network.
 2. Add `src/tools/<group>.ts` exporting `register<Group>Tools(server, ctx)`. Wrap handlers in `safe()` and return `ok(data)`. Mark write tools with the `WRITE` annotations.
 3. Register it in `src/index.ts`, and add tests under `test/`.
 
-Ideas on the roadmap: DIM Sync (tags and notes), in-game loadout slots (EquipLoadout/SnapshotLoadout), applying mods with `InsertSocketPlugFree`, activity and raid stats, and vendor and weekly-rotation lookups.
+Not built yet: DIM Sync (tags and notes). `list_loadouts` and `equip_loadout`'s "active" state don't consider plug drift (use `audit_build` for that).
