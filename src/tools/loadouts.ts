@@ -12,12 +12,14 @@ import {
   snapshotToSlot,
   type LoadoutSlot,
 } from '../loadouts/actions.js';
-import { buildLoadouts, type Loadout } from '../loadouts/loadouts.js';
+import { buildLoadouts, checkSave, type Loadout } from '../loadouts/loadouts.js';
 import type { Defs } from '../manifest/defs.js';
 import { executeEquip, executeTransfers, planEquip } from '../vault/actions.js';
 import { READ_ONLY, UserError, WRITE, ok, resolveCharacter, resolveItems, safe } from './util.js';
 
 const LAG_NOTE = 'Bungie\'s data can take a minute or more to reflect changes; call list_loadouts again to confirm.';
+const OVERLAY_NOTE =
+  "Mods you just changed are shown as saved, but Bungie's data can take a minute or more to show them. Re-check with list_loadouts or audit_build.";
 const ORBIT_NOTE = 'The character must be in orbit, in a social space, or offline.';
 const slotSchema = z.union([z.number().int().min(0), z.string()]);
 
@@ -180,13 +182,18 @@ export function registerLoadoutTools(server: McpServer, ctx: Context): void {
         }
         await snapshotToSlot(ctx.http, account, slot, ids);
         const after = await reread(ctx, slot);
-        const confirmed = !!after.loadout && after.loadout.name === summary.name;
+        const check = checkSave(
+          after.loadout,
+          { name: summary.name, itemIds: (equipPlan?.toEquip ?? []).flatMap((i) => (i.instanceId ? [i.instanceId] : [])) },
+          (id) => ctx.profile.recentPlugs(id),
+          after.defs,
+        );
         return ok({
           ...summary,
           replaces: undefined,
-          saved: confirmed && after.loadout ? describeLoadout(after.loadout, after.inv) : undefined,
-          confirmed,
-          note: confirmed ? undefined : `The game accepted the save. ${LAG_NOTE}`,
+          saved: check.saved ? describeLoadout(check.saved, after.inv) : undefined,
+          confirmed: check.confirmed,
+          note: check.confirmed ? undefined : `The game accepted the save. ${check.modsPending ? OVERLAY_NOTE : LAG_NOTE}`,
         });
       } finally {
         ctx.profile.invalidate();

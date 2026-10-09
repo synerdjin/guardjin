@@ -47,7 +47,7 @@ function plugSummaries(db: DatabaseSync, statNames: Map<number, string>): Map<nu
       string | null,
     ];
     if (COSMETIC_CATEGORY.test(category ?? '')) continue;
-    const text = squash(plugText({ displayProperties: { description: description ?? undefined }, perks: plugPerks ?? undefined }, (h) => perks.get(h)));
+    const text = squash(plugText({ displayProperties: { description }, perks: plugPerks, plug: { plugCategoryIdentifier: category } }, (h) => perks.get(h)));
     const stats = (investmentStats ?? [])
       .filter((s) => s.value)
       .sort((a, b) => a.statTypeHash - b.statTypeHash)

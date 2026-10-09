@@ -186,7 +186,7 @@ export class Defs {
     }
   }
 
-  /** Human-readable description for a plug: its own description, else its displayable sandbox perks. */
+  /** Human-readable description for a plug (see plugText). */
   describePlug(def: DestinyInventoryItemDefinition | undefined): string {
     return def ? plugText(def, (h) => this.sandboxPerk(h)) : '';
   }
@@ -226,20 +226,38 @@ export class Defs {
   }
 }
 
-type PlugTextSource = { displayProperties?: { description?: string }; perks?: { perkHash: number }[] };
+type PlugTextSource = {
+  displayProperties?: { description?: string | null };
+  perks?: { perkHash: number }[] | null;
+  plug?: { plugCategoryIdentifier?: string | null };
+};
 type PerkTextSource = { isDisplayable?: boolean; displayProperties?: { description?: string } };
 
-/** The text the game shows for a plug: its own description, else its displayable sandbox perks' descriptions. */
+/**
+ * Armor mods, tuning mods and armor masterworks often share one description across a whole family
+ * (e.g. every Font mod says how Armor Charge is gained); their specific effect lives in the perk.
+ */
+const ARMOR_PLUG = /^(enhancements\.|core\.gear_systems\.armor_tiering\.|v400\.plugs\.armor\.)/;
+
+/** Adds a period to text that ends mid-sentence (a letter or digit), e.g. "Deprecated Perk". */
+const endSentence = (s: string) => (/[\p{L}\p{N}]$/u.test(s) ? `${s}.` : s);
+
+/**
+ * The text the game shows for a plug: its own description, else its displayable sandbox perks' descriptions.
+ * Armor plugs get both, perk text first.
+ */
 export function plugText(def: PlugTextSource, perk: (hash: number) => PerkTextSource | undefined): string {
-  const own = def.displayProperties?.description?.trim();
-  if (own) return own;
-  return (def.perks ?? [])
-    .map((p) => {
-      const d = perk(p.perkHash);
-      return d?.isDisplayable ? d.displayProperties?.description?.trim() : undefined;
-    })
-    .filter(Boolean)
-    .join(' ');
+  const own = def.displayProperties?.description?.trim() ?? '';
+  const perkTexts = () =>
+    (def.perks ?? [])
+      .map((p) => {
+        const d = perk(p.perkHash);
+        return d?.isDisplayable ? d.displayProperties?.description?.trim() : undefined;
+      })
+      .filter((t): t is string => !!t);
+  if (!ARMOR_PLUG.test(def.plug?.plugCategoryIdentifier ?? '')) return own || perkTexts().join(' ');
+  const pieces = [...new Set([...perkTexts(), own].filter(Boolean))];
+  return pieces.map((p, i) => (i < pieces.length - 1 ? endSentence(p) : p)).join(' ');
 }
 
 /** Creates the name index used by searchItems. Runs once per manifest version. */
