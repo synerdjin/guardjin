@@ -105,6 +105,20 @@ export class ProfileService {
     this.recentWrites.set(instanceId, entry);
   }
 
+  /** Plug writes (socket index -> plug hash) we made to an item recently enough that Bungie's data may not show them yet. */
+  recentPlugs(instanceId: string): Map<number, number> | undefined {
+    return this.recentWrite(instanceId)?.plugs;
+  }
+
+  private recentWrite(instanceId: string): RecentWrites | undefined {
+    const recent = this.recentWrites.get(instanceId);
+    if (recent && Date.now() - recent.at > WRITE_OVERLAY_MS) {
+      this.recentWrites.delete(instanceId);
+      return undefined;
+    }
+    return recent;
+  }
+
   /**
    * Replaces an item's data with live data from GetItem, rebuilding the model item (stats, perks,
    * mods, energy). GetProfile can trail a write by a minute or more, so anything that reports on or
@@ -131,9 +145,7 @@ export class ProfileService {
     );
     const id = item.instanceId;
 
-    const recent = this.recentWrites.get(id);
-    if (recent && Date.now() - recent.at > WRITE_OVERLAY_MS) this.recentWrites.delete(id);
-    const overlay = this.recentWrites.get(id);
+    const overlay = this.recentWrite(id);
     const sockets = live.sockets?.data?.sockets as { plugHash: number }[] | undefined;
     if (overlay && sockets) for (const [index, plugHash] of overlay.plugs) if (sockets[index]) sockets[index] = { ...sockets[index], plugHash };
     const rawInstance = live.instance?.data;
